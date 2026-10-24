@@ -127,7 +127,8 @@ pkgbuild_version() {
 #   OVERRIDE_VERSION   version of override/ (empty without one)
 #   OVERRIDE_STATE     none | active | permanent | stale
 resolve_package() {
-  local name="$1" dest="$2" checkout="${3:-}" src="$(pkg_dir "$1")" tmp=""
+  local name="$1" dest="$2" checkout="${3:-}" src tmp=""
+  src="$(pkg_dir "$1")"
   RESOLVED_FROM="" RESOLVED_VERSION="" AUR_VERSION="" OVERRIDE_VERSION="" OVERRIDE_STATE="none"
 
   is_package "$name" || { warn "$(pkg_path "$name") is not a package"; return 1; }
@@ -181,7 +182,8 @@ resolve_package() {
 # keeping AUR's maintainer as a contributor. <why> continues the header line
 # "Override of AUR `<pkgbase>` (<version> at <commit>),".
 create_override() {
-  local name="$1" src="$2" why="$3" dir="$(pkg_dir "$1")/override" tmp version
+  local name="$1" src="$2" why="$3" dir tmp version
+  dir="$(pkg_dir "$1")/override"
   version="$(srcinfo_version "$src")"
   rm -rf "$dir"
   mkdir -p "$dir"
