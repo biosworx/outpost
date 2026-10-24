@@ -44,10 +44,11 @@ sudo pacman -Sy
   push run, one package per workflow run. When a push changes several, its
   run starts one run per package and builds nothing itself, so each package
   has its own status and re-run button; a failed package is not retried by
-  the next push, so re-run its run. Each run's publish job adds the package
-  to the database on B2, purges the Cloudflare cache, then permanently
-  deletes the package's old versions (and any old file versions B2 kept);
-  publish jobs queue up and run one at a time.
+  the next push, so re-run its run. Builds run in parallel; each build run
+  that finishes starts a *Publish* run, which adds the package to the
+  database on B2, purges the Cloudflare cache, then permanently deletes the
+  package's old versions (and any old file versions B2 kept). Publish runs
+  queue up and run one at a time; a failed one is retried by re-running it.
   To rebuild by hand, run the workflow with a package list or `all`.
 - **Republishing the same version needs a `pkgrel` bump.** CI skips versions
   already in the database.

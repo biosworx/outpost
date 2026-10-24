@@ -1,0 +1,134 @@
+name: Publish [aurstrich]
+run-name: Publish ${{ github.event.workflow_run.display_title }}
+
+# Stage three, split out of build.yml so build runs finish as soon as their
+# package is built instead of holding a runner while they wait for the lock.
+# Each successful build run starts one publish run, which publishes that
+# run's package. Re-run a publish run to retry it (artifacts last a day).
+on:
+  workflow_run:
+    workflows: ["Build [aurstrich]"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read # read the build run's artifacts
+
+jobs:
+  check:
+    name: Check for built packages
+    # Dispatcher runs and versions that were already published upload
+    # nothing; skip them here rather than taking the lock for no reason.
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    outputs:
+      count: ${{ steps.check.outputs.count }}
+    steps:
+      - name: List the build run's packages
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          names=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
+            --jq '.artifacts[] | select(.expired | not) | .name | select(startswith("pkg-"))')
+          echo "${names:-nothing to publish}"
+          echo "count=$(grep -c . <<<"$names" || true)" >>"$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish
+    needs: check
+    if: needs.check.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: archlinux:base-devel
+
+    # One writer to the repository database at a time; shared with the
+    # remove-package workflow. Queue, never cancel: with one run per package,
+    # several publish runs often wait at once, and the default queue keeps
+    # only one pending, cancelling the rest.
+    concurrency:
+      group: pacman-repo-sync
+      cancel-in-progress: false
+      queue: max
+
+    env:
+      OUT_DIR: ${{ github.workspace }}/.repo
+      B2_BUCKET: ${{ secrets.B2_BUCKET }}
+      RCLONE_CONFIG_B2_TYPE: b2
+      RCLONE_CONFIG_B2_ACCOUNT: ${{ secrets.B2_KEY_ID }}
+      RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_APP_KEY }}
+
+    steps:
+      - name: Install tooling
+        run: |
+          pacman-key --init
+          pacman -Syu --noconfirm --needed git rclone jq
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Prepare build user
+        run: scripts/ci/setup-builder.sh
+
+      - name: Import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: scripts/ci/setup-gpg.sh
+
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: pkg-*
+          merge-multiple: true
+          path: .repo/.pkgdest
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Download publish options
+        uses: actions/download-artifact@v8
+        with:
+          name: publish-options
+          path: .repo/options
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Collect built packages
+        id: collect
+        run: |
+          find "$OUT_DIR/.pkgdest" -maxdepth 1 -name '*.pkg.tar.zst' | sort >"$OUT_DIR/.built"
+          sed 's|.*/||' "$OUT_DIR/.built"
+          prune=$(sed -n 's/^PRUNE=//p' "$OUT_DIR/options/publish.env")
+          echo "prune=${prune:-1}" >>"$GITHUB_OUTPUT"
+
+      - name: Pull repository database
+        run: scripts/ci/publish.sh pull
+
+      - name: Update database and upload
+        id: publish
+        run: scripts/ci/publish.sh push
+
+      - name: Purge Cloudflare cache
+        if: steps.publish.outcome == 'success'
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+        run: scripts/ci/purge-cache.sh
+
+      - name: Prune superseded packages
+        if: steps.publish.outcome == 'success'
+        env:
+          PRUNE: ${{ steps.collect.outputs.prune }}
+        run: scripts/ci/publish.sh prune
+
+      - name: Stop gpg-agent
+        if: always()
+        run: |
+          if id builder >/dev/null 2>&1; then
+            sudo -u builder -H GNUPGHOME=/home/builder/.gnupg gpgconf --kill gpg-agent || true
+          fi
