@@ -1,0 +1,107 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
+#
+# Built from source against the system Electron, following the AUR
+# `legcord` package (which is out of date at 1.3.0).
+
+pkgname=legcord
+pkgver=1.3.1
+pkgrel=1
+_electron=electron44
+pkgdesc="Lightweight, alternative desktop client for Discord with client mod and theme support"
+# x86_64: the app bundles the native venmic addon (screenshare audio).
+arch=('x86_64')
+url="https://github.com/Legcord/Legcord"
+license=('OSL-3.0')
+# libpipewire/libpulse: linked by the bundled venmic addon.
+depends=("${_electron}" 'libpipewire' 'libpulse')
+makedepends=('git' 'nodejs' 'pnpm')
+optdepends=(
+  'libnotify: desktop notifications'
+  'xdg-utils: open links and files'
+  'pipewire: system audio in screenshare (venmic)'
+)
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('a443140d8e3081e17ed498a3a978c9e08414cec07e5f64319841c5c5b6ae3ece')
+
+_srcdir="Legcord-${pkgver}"
+
+prepare() {
+  cd "${_srcdir}"
+  # Keep pnpm/electron caches out of the builder's home.
+  export HOME="${srcdir}/home" XDG_CACHE_HOME="${srcdir}/cache"
+  export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+  # Use whatever pnpm Arch ships instead of fetching the pinned version.
+  export npm_config_manage_package_manager_versions=false
+  pnpm install --frozen-lockfile
+}
+
+build() {
+  cd "${_srcdir}"
+  export HOME="${srcdir}/home" XDG_CACHE_HOME="${srcdir}/cache"
+  export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+  export npm_config_manage_package_manager_versions=false
+
+  local electron_dist="/usr/lib/${_electron}"
+  local electron_version
+  electron_version="$(<"${electron_dist}/version")"
+
+  NODE_ENV=production pnpm run build
+  # Package only the app.asar, built against the system Electron, so no
+  # Electron binary is downloaded.
+  NODE_ENV=production pnpm exec electron-builder \
+    --linux dir --publish never \
+    -c.electronDist="${electron_dist}" \
+    -c.electronVersion="${electron_version#v}"
+}
+
+package() {
+  cd "${_srcdir}"
+  local resources="dist/linux-unpacked/resources"
+
+  install -Dm644 "${resources}/app.asar" -t "${pkgdir}/usr/lib/${pkgname}/"
+  if [[ -d "${resources}/app.asar.unpacked" ]]; then
+    cp -r --no-preserve=ownership "${resources}/app.asar.unpacked" "${pkgdir}/usr/lib/${pkgname}/"
+  fi
+
+  # koffi (FFI, used by arrpc for Rich Presence) ships prebuilt binaries for
+  # 18 platforms plus its sources; only the linux_x64 build is ever loaded.
+  local koffi="${pkgdir}/usr/lib/${pkgname}/app.asar.unpacked/node_modules/koffi"
+  if [[ -d "${koffi}" ]]; then
+    rm -rf "${koffi}"/{doc,src,vendor}
+    find "${koffi}/build/koffi" -mindepth 1 -maxdepth 1 ! -name linux_x64 -exec rm -rf {} +
+  fi
+  # Same for venmic: drop the arm64 prebuild.
+  rm -rf "${pkgdir}/usr/lib/${pkgname}/app.asar.unpacked/node_modules/@vencord/venmic/prebuilds/venmic-addon-linux-arm64"
+
+  install -Dm644 build/icon.png "${pkgdir}/usr/share/icons/hicolor/512x512/apps/${pkgname}.png"
+  install -Dm644 license.txt "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+
+  # Launcher: honours ~/.config/legcord-flags.conf like Arch's Electron apps.
+  install -Dm755 /dev/stdin "${pkgdir}/usr/bin/${pkgname}" <<EOF
+#!/usr/bin/env bash
+flags_file="\${XDG_CONFIG_HOME:-\$HOME/.config}/${pkgname}-flags.conf"
+flags=()
+if [[ -f "\$flags_file" ]]; then
+  while IFS= read -r line; do
+    [[ "\$line" =~ ^[[:space:]]*(#|$) ]] || flags+=("\$line")
+  done <"\$flags_file"
+fi
+export ELECTRON_IS_DEV=0 ELECTRON_FORCE_IS_PACKAGED=true
+exec ${_electron} /usr/lib/${pkgname}/app.asar "\${flags[@]}" "\$@"
+EOF
+
+  install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/${pkgname}.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Legcord
+GenericName=Internet Messenger
+Comment=${pkgdesc}
+Exec=${pkgname} %U
+Icon=${pkgname}
+Categories=Network;InstantMessaging;
+MimeType=x-scheme-handler/discord;
+StartupWMClass=legcord
+Terminal=false
+EOF
+}

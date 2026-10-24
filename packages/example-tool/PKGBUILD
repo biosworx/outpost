@@ -1,4 +1,5 @@
 # Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
 
 pkgname=example-tool
 pkgver=1.0.0
