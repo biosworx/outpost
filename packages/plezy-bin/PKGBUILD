@@ -1,0 +1,42 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
+#
+# Repackages upstream's release .deb, following the AUR `plezy-bin` package.
+# [extra] ships `plezy` but lags upstream; [aurstrich] comes after [extra] in
+# pacman.conf, so a package named `plezy` here would never be picked.
+
+pkgname=plezy-bin
+_pkgname=plezy
+pkgver=2.24.0
+pkgrel=1
+pkgdesc="Modern client for Plex, Jellyfin and Emby (upstream binary)"
+arch=('x86_64')
+url="https://github.com/edde746/plezy"
+license=('GPL-3.0-or-later')
+# Nearly everything the app links (GTK, glib, libmpv, ffmpeg) is bundled in
+# /opt/plezy/lib. These are what upstream's own packages leave to the system
+# because they are tied to the compositor and GPU driver. The bundled libmpv
+# is kept on purpose: a distro libmpv loses hwdec on the native video plane.
+depends=('alsa-lib' 'glib2' 'gtk3' 'hicolor-icon-theme' 'libdrm' 'libepoxy'
+         'libevdev' 'libglvnd' 'libva' 'libx11' 'libxcb' 'libxext' 'mesa'
+         'wayland')
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}")
+# Prebuilt; the wrapper finds the bundled libraries through LD_LIBRARY_PATH.
+options=('!strip' '!debug')
+# Release tags have no v prefix.
+source=("${pkgname}-${pkgver}.deb::${url}/releases/download/${pkgver}/plezy-linux-x64.deb")
+noextract=("${pkgname}-${pkgver}.deb")
+sha256sums=('a5f6088e58ec836c74810d23e1288f42d97c9a9a40c6410e99b015786aa0b16a')
+
+package() {
+  # The Flutter bundle in /opt/plezy plus the /usr/bin wrapper, desktop entry
+  # and icons.
+  bsdtar -xOf "${pkgname}-${pkgver}.deb" 'data.tar.*' \
+    | bsdtar -xpf - -C "${pkgdir}" --exclude './usr/share/doc' ./opt ./usr
+
+  # The .deb fixes this up in its postinst, which pacman never runs.
+  chmod 755 "${pkgdir}/opt/${_pkgname}/lib/crashpad_handler"
+
+  # GPL-3.0-or-later is in /usr/share/licenses/spdx; the .deb has no copy.
+}
