@@ -1,0 +1,123 @@
+name: Build and publish [aurstrich]
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: 'Space-separated package names, "all", or blank to auto-detect'
+        required: false
+        default: ""
+      prune:
+        description: "Delete package files no longer referenced by the database"
+        type: boolean
+        default: true
+
+# One writer to the repository database at a time; queue, never cancel.
+concurrency:
+  group: pacman-repo-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read # detect-changes.sh looks up the last successful run
+
+jobs:
+  build:
+    name: Build, sign and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: archlinux:base-devel
+      options: --privileged
+
+    env:
+      OUT_DIR: ${{ github.workspace }}/.repo
+      B2_BUCKET: ${{ vars.B2_BUCKET }}
+      RCLONE_CONFIG_B2_TYPE: b2
+      RCLONE_CONFIG_B2_ACCOUNT: ${{ secrets.B2_KEY_ID }}
+      RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_APP_KEY }}
+      RCLONE_CONFIG_B2_HARD_DELETE: "false"
+
+    steps:
+      - name: Install tooling
+        run: |
+          pacman-key --init
+          pacman -Syu --noconfirm --needed git rclone jq github-cli
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Detect changed packages
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PACKAGES: ${{ github.event.inputs.packages }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          WORKFLOW_FILE: build.yml
+          BRANCH: main
+        run: scripts/ci/detect-changes.sh
+
+      - name: Prepare build user
+        if: steps.detect.outputs.packages != ''
+        run: scripts/ci/setup-builder.sh
+
+      - name: Import signing key
+        if: steps.detect.outputs.packages != ''
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: scripts/ci/setup-gpg.sh
+
+      - name: Pull repository database
+        if: steps.detect.outputs.packages != ''
+        run: scripts/ci/publish.sh pull
+
+      - name: Build packages
+        id: build
+        if: steps.detect.outputs.packages != ''
+        env:
+          PACKAGES: ${{ steps.detect.outputs.packages }}
+        run: scripts/ci/build-packages.sh
+
+      - name: Update database and upload
+        id: publish
+        if: steps.build.outputs.built != ''
+        run: scripts/ci/publish.sh push
+
+      - name: Purge Cloudflare cache
+        if: steps.publish.outcome == 'success'
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+        run: scripts/ci/purge-cache.sh
+
+      - name: Prune superseded packages
+        if: steps.publish.outcome == 'success'
+        env:
+          PRUNE: ${{ github.event_name == 'workflow_dispatch' && !inputs.prune && '0' || '1' }}
+        run: scripts/ci/publish.sh prune
+
+      - name: Report failed packages
+        if: steps.build.outputs.failed != ''
+        env:
+          FAILED: ${{ steps.build.outputs.failed }}
+        run: |
+          echo "::error::Failed to build: ${FAILED}"
+          exit 1
+
+      - name: Stop gpg-agent
+        if: always()
+        run: |
+          if id builder >/dev/null 2>&1; then
+            sudo -u builder -H GNUPGHOME=/home/builder/.gnupg gpgconf --kill gpg-agent || true
+          fi

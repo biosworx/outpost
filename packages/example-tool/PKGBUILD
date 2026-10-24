@@ -1,0 +1,25 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+
+pkgname=example-tool
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Reference package for the [aurstrich] repository; prints basic system info"
+arch=('any')
+url="https://github.com/biosworx/outpost"
+license=('0BSD')
+depends=('bash' 'coreutils' 'procps-ng')
+source=("example-tool.sh")
+sha256sums=('5140c53cc17b500095422f19e5e23c7f41675fbf03a6ecb83c253433f99fb75a')
+
+prepare() {
+  sed -i "s/@VERSION@/${pkgver}/" example-tool.sh
+}
+
+check() {
+  bash -n example-tool.sh
+  [[ "$(bash example-tool.sh --version)" == "example-tool ${pkgver}" ]]
+}
+
+package() {
+  install -Dm755 example-tool.sh "${pkgdir}/usr/bin/example-tool"
+}

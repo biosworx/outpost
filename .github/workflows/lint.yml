@@ -1,0 +1,47 @@
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - "packages/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck
+        run: |
+          mapfile -t files < <(git ls-files 'scripts/*.sh' 'scripts/**/*.sh')
+          shellcheck --external-sources --severity=style "${files[@]}"
+
+  pkgbuild:
+    name: PKGBUILD sanity
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm --needed git namcap
+      - uses: actions/checkout@v4
+      - name: Check PKGBUILDs
+        run: |
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          status=0
+          for dir in packages/*/; do
+            [ -f "$dir/PKGBUILD" ] || continue
+            echo "==> $dir"
+            # Parse without building; catches syntax errors and bad metadata.
+            ( cd "$dir" && sudo -u builder makepkg --printsrcinfo >/dev/null ) || status=1
+            namcap "$dir/PKGBUILD" || status=1
+          done
+          exit "$status"
