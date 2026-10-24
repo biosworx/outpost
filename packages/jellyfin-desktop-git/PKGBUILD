@@ -1,0 +1,59 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
+# Contributor: Michał Walenciak <michalwalenciak@gmail.com>
+# Contributor: Andrew Rabert <ar@nullsum.net>
+#
+# From the AUR `jellyfin-desktop-git` package.
+
+pkgname=jellyfin-desktop-git
+pkgver=2.0.0.r172.g2cb4a44
+pkgrel=2
+epoch=1
+license=('GPL-2.0-only')
+pkgdesc="Jellyfin Desktop Client"
+arch=('x86_64')
+url="https://github.com/jellyfin/jellyfin-desktop"
+depends=(
+    'libcec'
+    'mpvqt'
+    'qt6-webengine'
+    'qt6-declarative'
+)
+makedepends=(
+    'cmake'
+    'git'
+    'ninja'
+)
+
+provides=('jellyfin-desktop')
+conflicts=('jellyfin-desktop')
+source=("${pkgname}::git+${url}.git")
+sha256sums=('SKIP')
+
+
+pkgver() {
+  cd "$pkgname"
+  git describe --long --tags --abbrev=7 |
+    sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+
+build() {
+    cd "$pkgname"
+    rm -rf build
+    mkdir build
+    cmake \
+        -B build \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE='None' \
+        -DCMAKE_INSTALL_PREFIX='/usr/' \
+        -DCMAKE_SKIP_RPATH=1 \
+        -DQTROOT=build/qt \
+        -Wno-author
+    cmake --build build
+}
+
+package() {
+    cd "$pkgname"
+    DESTDIR="${pkgdir}" cmake --install build
+}
