@@ -41,7 +41,9 @@ sudo pacman -Sy
   `updpkgsums`, test with `scripts/local-build.sh <name>` (needs `devtools`),
   then push to `main`.
 - **CI** builds only the packages that changed since the last successful run,
-  signs them, updates the database on B2 and purges the Cloudflare cache.
+  each in its own job, so one failure doesn't hold up the rest. A final
+  publish job adds whatever built to the database on B2 and purges the
+  Cloudflare cache.
   To rebuild by hand, run the workflow with a package list or `all`.
 - **Republishing the same version needs a `pkgrel` bump.** CI skips versions
   already in the database.

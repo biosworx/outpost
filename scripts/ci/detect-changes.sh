@@ -11,7 +11,8 @@
 #   3. If no usable base exists (first commit, history rewritten), build everything.
 #
 # Writes the space-separated package names to the step output "packages"
-# (empty when there is nothing to build).
+# (empty when there is nothing to build), and the same names as a JSON array
+# to "matrix" (e.g. ["legcord","plezy-bin"]) for a build matrix.
 #
 # Env: INPUT_PACKAGES, EVENT_BEFORE, GH_TOKEN, GITHUB_REPOSITORY,
 #      WORKFLOW_FILE (default build.yml), BRANCH (default main)
@@ -53,13 +54,18 @@ last_successful_sha() {
 }
 
 emit() {
-  local list="$*"
+  local list="$*" json="" name
   if [[ -z "$list" ]]; then
     ok "nothing to build"
   else
     ok "packages to build: $list"
   fi
+  # Package names never need JSON escaping (a-z 0-9 @ . _ + -).
+  for name in "$@"; do
+    json+="${json:+,}\"${name}\""
+  done
   set_output packages "$list"
+  set_output matrix "[${json}]"
 }
 
 # --- 1. Explicit selection ------------------------------------------------------
@@ -74,7 +80,7 @@ if [[ -n "${INPUT_PACKAGES:-}" ]]; then
       selected+=("$name")
     done
   fi
-  emit "${selected[*]}"
+  emit "${selected[@]}"
   exit 0
 fi
 
@@ -92,7 +98,7 @@ done
 if [[ -z "$base" ]]; then
   warn "no usable base commit found; building all packages"
   mapfile -t selected < <(all_packages)
-  emit "${selected[*]}"
+  emit "${selected[@]}"
   exit 0
 fi
 
@@ -112,4 +118,4 @@ done < <(
     | sort -u
 )
 
-emit "${selected[*]}"
+emit "${selected[@]}"
