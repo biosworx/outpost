@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034  # constants are used by the scripts that source this file
 #
 # Shared helpers and constants for outpost scripts.
 # Source this file; do not execute it.
