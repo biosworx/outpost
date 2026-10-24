@@ -149,5 +149,7 @@ Next steps:
   1. Edit packages/${name}/PKGBUILD (search for TODO).
   2. Fill in checksums:       (cd packages/${name} && updpkgsums)
   3. Build in a clean chroot: scripts/local-build.sh ${name}
-  4. Commit and push; CI builds, signs and publishes it to [${REPO_NAME}].
+  4. Optional: add packages/${name}/update.conf for automatic update PRs
+     (copy packages/legcord/update.conf).
+  5. Commit and push; CI builds, signs and publishes it to [${REPO_NAME}].
 EOF

@@ -47,14 +47,26 @@ group_start "Registering [${REPO_NAME}] repository"
 if grep -q "^\[${REPO_NAME}\]" /etc/pacman.conf; then
   log "[${REPO_NAME}] already present in pacman.conf"
 elif curl -fsSI --max-time 20 "${REPO_URL}/${REPO_NAME}.db" >/dev/null 2>&1; then
-  # Package signatures are verified against the key imported by setup-gpg.sh;
-  # setup-gpg.sh adds that key to the pacman keyring and runs pacman -Sy.
+  # Trust the committed public key so [REPO_NAME] packages verify even in
+  # jobs that never import the private signing key (e.g. update test builds).
+  pubkey="${REPO_ROOT}/keys/${REPO_NAME}.asc"
+  if [[ ! -f "$pubkey" ]] || grep -q PLACEHOLDER "$pubkey"; then
+    die "keys/${REPO_NAME}.asc is missing; cannot trust [${REPO_NAME}]"
+  fi
+  # Always init: the base image has a trustdb but no local key to lsign with.
+  pacman-key --init
+  pacman-key --add "$pubkey"
+  while IFS= read -r fpr; do
+    pacman-key --lsign-key "$fpr"
+  done < <(gpg --batch --with-colons --show-keys "$pubkey" 2>/dev/null | awk -F: '$1 == "fpr" { print $10; exit }')
+
   cat >>/etc/pacman.conf <<EOF
 
 [${REPO_NAME}]
 SigLevel = Required DatabaseOptional
 Server = ${REPO_URL}
 EOF
+  pacman -Sy --noconfirm
   ok "added [${REPO_NAME}] -> ${REPO_URL}"
 else
   warn "${REPO_URL}/${REPO_NAME}.db not reachable yet; skipping (first publish?)"

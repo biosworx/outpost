@@ -1,12 +1,17 @@
 # Cloudflare + B2 setup
 
 `https://outpost.bios.plus/aurstrich/…` is served by Cloudflare from the public
-B2 bucket `<bucket>` (EU Central, friendly host `f003.backblazeb2.com`).
+B2 bucket `<bucket>` (EU Central, friendly host `f003.backblazeb2.com`). The bucket
+name is kept out of this public repo: it is stored only as the `B2_BUCKET`
+secret and in the Cloudflare rewrite rule.
 
 ## B2
 
 1. Bucket `<bucket>`: **Public**.
 2. Lifecycle Settings: **Keep only the last version of the file**.
+3. Caps & Alerts (Account → Caps & Alerts): set a daily cap on **download
+   bandwidth** and **Class B transactions**. The public bucket can also be
+   fetched directly, bypassing Cloudflare, and B2 bills that egress.
 
 ## DNS
 

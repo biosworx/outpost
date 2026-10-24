@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Interactively set the GitHub Actions secrets and variables the build
+# Interactively set the GitHub Actions secrets the build
 # workflow needs. Values are read without echo and piped to `gh` on stdin,
 # so they never appear in argv, shell history or files.
 #
@@ -10,7 +10,7 @@
 #   --repo OWNER/NAME   target repository (default: biosworx/outpost)
 #   --op-vault VAULT    1Password vault holding the GPG items (default: Private)
 #   --no-op             prompt for GPG values instead of reading 1Password
-#   --only NAME[,NAME]  set only these secrets/variables
+#   --only NAME[,NAME]  set only these secrets
 #   --dry-run           validate and print what would be set; change nothing
 #   -h, --help          show this help
 #
@@ -89,16 +89,6 @@ store_secret() {
 curl_auth() {
   local auth_line="$1"; shift
   printf '%s\n' "$auth_line" | curl -sS --max-time 20 -K - "$@"
-}
-
-store_variable() {
-  local name="$1"
-  if [[ "$dry_run" -eq 1 ]]; then
-    log "would set variable $name=${val[$name]}"
-  else
-    gh variable set "$name" --repo "$repo" --body "${val[$name]}"
-    ok "set variable $name=${val[$name]}"
-  fi
 }
 
 log "target repository: $repo$( [[ "$dry_run" -eq 1 ]] && printf ' (dry run)')"
@@ -186,7 +176,8 @@ if wanted B2_KEY_ID || wanted B2_APP_KEY || wanted B2_BUCKET; then
 
   wanted B2_KEY_ID && store_secret B2_KEY_ID
   wanted B2_APP_KEY && store_secret B2_APP_KEY
-  wanted B2_BUCKET && store_variable B2_BUCKET
+  # A secret, not a variable, so the name is masked in public Actions logs.
+  wanted B2_BUCKET && store_secret B2_BUCKET
   group_end
 fi
 
@@ -222,4 +213,4 @@ if wanted CF_API_TOKEN || wanted CF_ZONE_ID; then
   group_end
 fi
 
-ok "done. Check with: gh secret list --repo $repo && gh variable list --repo $repo"
+ok "done. Check with: gh secret list --repo $repo"

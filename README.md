@@ -45,6 +45,11 @@ sudo pacman -Sy
   To rebuild by hand, run the workflow with a package list or `all`.
 - **Republishing the same version needs a `pkgrel` bump.** CI skips versions
   already in the database.
+- **Automatic updates:** packages with an `update.conf` (see
+  [`packages/legcord/update.conf`](packages/legcord/update.conf)) are checked
+  daily. A new upstream version gets a test build and a PR: a ready PR if the
+  build passed, a draft PR with the build log if it failed. Merge it to
+  publish. Run *Check for package updates* by hand to check now.
 - **Packages that depend on each other:** push the dependency first. Packages
   changed in the same push are built in no particular order.
 - **Secrets:** `scripts/set-secrets.sh` checks every value and stores it in

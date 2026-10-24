@@ -1,0 +1,76 @@
+name: Check for package updates
+
+on:
+  schedule:
+    - cron: "17 5 * * *" # daily, 05:17 UTC
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: "Space-separated package names to check (blank = all with update.conf)"
+        required: false
+        default: ""
+
+concurrency:
+  group: check-updates
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push update/* branches
+  pull-requests: write # open and close update PRs
+
+jobs:
+  check:
+    name: Check upstream versions
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    outputs:
+      updates: ${{ steps.check.outputs.updates }}
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm --needed git github-cli jq
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Check for updates
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGES: ${{ github.event.inputs.packages }}
+        run: |
+          # shellcheck disable=SC2086 # word-split the package list on purpose
+          scripts/ci/check-updates.sh $PACKAGES
+
+  update:
+    name: Update ${{ matrix.package }} to ${{ matrix.version }}
+    needs: check
+    if: needs.check.outputs.updates != '[]' && needs.check.outputs.updates != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: archlinux:base-devel
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.check.outputs.updates) }}
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm --needed git github-cli jq pacman-contrib
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Prepare build user
+        run: scripts/ci/setup-builder.sh
+
+      - name: Bump, test-build and open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.package }}
+          VERSION: ${{ matrix.version }}
+        run: scripts/ci/propose-update.sh "$PACKAGE" "$VERSION"
