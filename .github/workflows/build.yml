@@ -148,6 +148,9 @@ jobs:
     timeout-minutes: 30
     container:
       image: archlinux:base-devel
+    permissions:
+      contents: read
+      actions: write # delete this run's package artifact once published
 
     # One writer to the repository database at a time; shared with the
     # remove-package workflow. Queue, never cancel: with one run per package,
@@ -169,7 +172,7 @@ jobs:
       - name: Install tooling
         run: |
           pacman-key --init
-          pacman -Syu --noconfirm --needed git rclone jq
+          pacman -Syu --noconfirm --needed git rclone jq github-cli
 
       - name: Check out repository
         uses: actions/checkout@v7
@@ -222,6 +225,21 @@ jobs:
         env:
           PRUNE: ${{ github.event_name == 'workflow_dispatch' && !inputs.prune && '0' || '1' }}
         run: scripts/ci/publish.sh prune
+
+      # The artifact is only the hand-off from the build job; delete it
+      # whatever happened. After a failed publish, re-run all jobs: the
+      # package has to be built again.
+      - name: Delete package artifact
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+            --jq '.artifacts[] | select(.name | startswith("pkg-")) | .id' |
+            while read -r id; do
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"
+              echo "deleted artifact ${id}"
+            done
 
       - name: Stop gpg-agent
         if: always()
