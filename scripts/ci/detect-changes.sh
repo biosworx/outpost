@@ -11,7 +11,11 @@
 #   3. If no usable base exists (first commit, history rewritten), build everything.
 #
 # A change to any file under packages/<l>/<name>/ selects it: for AUR-linked
-# packages that includes moving the pin in aur.conf.
+# packages that includes moving the pin in aur.conf. Two kinds of change do
+# not, since they cannot change what gets built:
+#   - update.conf, which only check-updates.sh reads
+#   - a file moved unchanged within its package's tree, e.g. re-filed from
+#     packages/<name>/ to packages/<l>/<name>/
 #
 # Each run builds one package. Writes the step outputs:
 #   packages  every selected name, space-separated (empty: nothing to build)
@@ -113,8 +117,19 @@ while IFS= read -r name; do
     warn "$(pkg_path "$name") changed but has no PKGBUILD or aur.conf (removed?); skipping"
   fi
 done < <(
-  git diff --name-only --no-renames "$base" HEAD -- packages/ \
-    | awk -F/ 'NF >= 4 && $1 == "packages" { print $3 }' \
+  # --find-renames=100% pairs only byte-identical moves (R100); any other
+  # move shows as a delete plus an add.
+  git diff --name-status --find-renames=100% "$base" HEAD -- packages/ \
+    | awk -F'\t' '
+        # Path inside the package: drop packages/ and the letter directory.
+        function rel(p) { sub(/^packages\//, "", p); sub(/^[^\/]\//, "", p); return p }
+        $1 ~ /^R/ && rel($2) == rel($3) { next }
+        {
+          n = split($NF, part, "/")
+          if (n < 4 || part[1] != "packages") next
+          if (n == 4 && part[4] == "update.conf") next
+          print part[3]
+        }' \
     | sort -u
 )
 
