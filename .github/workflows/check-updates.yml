@@ -64,6 +64,9 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Prepare build user
+        env:
+          # Read [aurstrich] straight from B2 (Bot Fight Mode blocks runners).
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
         run: scripts/ci/setup-builder.sh
 
       - name: Bump, test-build and open PR

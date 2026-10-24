@@ -19,6 +19,11 @@ REPO_URL="${REPO_BASE_URL}/${REPO_ARCH}"
 # rclone remote name; configured purely through RCLONE_CONFIG_B2_* env vars.
 RCLONE_REMOTE="${RCLONE_REMOTE:-b2}"
 
+# B2 "friendly URL" host of the bucket (EU Central). CI reads [aurstrich]
+# from here directly, because Cloudflare's Bot Fight Mode challenges GitHub's
+# runners on the public domain.
+B2_DOWNLOAD_HOST="${B2_DOWNLOAD_HOST:-https://f003.backblazeb2.com}"
+
 # Absolute path of the repository checkout.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PACKAGES_DIR="${REPO_ROOT}/packages"

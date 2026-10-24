@@ -47,7 +47,15 @@ EOF
 group_end
 
 group_start "Registering [${REPO_NAME}] repository"
-db_url="${REPO_URL}/${REPO_NAME}.db"
+# With the bucket name available (CI), read the repo straight from B2: the
+# public domain sits behind Bot Fight Mode, which challenges GitHub's runners.
+# The bucket name is a secret, so Actions masks it in the URL below.
+if [[ -n "${B2_BUCKET:-}" ]]; then
+  server_url="${B2_DOWNLOAD_HOST}/file/${B2_BUCKET}/${REPO_PREFIX}/${REPO_ARCH}"
+else
+  server_url="$REPO_URL"
+fi
+db_url="${server_url}/${REPO_NAME}.db"
 headers="$(curl -sSI --max-time 20 "$db_url" 2>&1 || true)"
 status="$(awk 'toupper($1) ~ /^HTTP\// { code = $2 } END { print code }' <<<"$headers")"
 
@@ -71,10 +79,10 @@ elif [[ "$status" == "200" ]]; then
 
 [${REPO_NAME}]
 SigLevel = Required DatabaseOptional
-Server = ${REPO_URL}
+Server = ${server_url}
 EOF
   pacman -Sy --noconfirm
-  ok "added [${REPO_NAME}] -> ${REPO_URL}"
+  ok "added [${REPO_NAME}] -> ${server_url}"
 elif [[ "$status" == "404" ]]; then
   warn "${db_url} does not exist yet; skipping (first publish?)"
 else

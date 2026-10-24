@@ -6,7 +6,7 @@
 
 pkgname=legcord
 pkgver=1.3.1
-pkgrel=1
+pkgrel=2
 _electron=electron44
 pkgdesc="Lightweight, alternative desktop client for Discord with client mod and theme support"
 # x86_64: the app bundles the native venmic addon (screenshare audio).
