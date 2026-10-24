@@ -16,6 +16,9 @@ REPO_PREFIX="${REPO_PREFIX:-$REPO_NAME}"
 REPO_BASE_URL="${REPO_DOMAIN}/${REPO_PREFIX}"
 REPO_URL="${REPO_BASE_URL}/${REPO_ARCH}"
 
+# Maintainer line for PKGBUILDs CI writes (new overrides).
+OVERRIDE_MAINTAINER="${OVERRIDE_MAINTAINER:-BiosPlus <9003059+BiosPlus@users.noreply.github.com>}"
+
 # rclone remote name; configured purely through RCLONE_CONFIG_B2_* env vars.
 RCLONE_REMOTE="${RCLONE_REMOTE:-b2}"
 

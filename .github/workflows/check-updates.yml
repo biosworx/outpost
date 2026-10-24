@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       packages:
-        description: "Space-separated package names to check (blank = all with update.conf)"
+        description: "Space-separated package names to check (blank = all)"
         required: false
         default: ""
 
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   check:
-    name: Check upstream versions
+    name: Check AUR and upstream versions
     # Lightweight: gh, jq and git are preinstalled; vercmp comes from
     # scripts/lib/vercmp.sh since slim has no pacman (and no job containers).
     runs-on: ubuntu-slim
@@ -41,7 +41,7 @@ jobs:
           scripts/ci/check-updates.sh $PACKAGES
 
   update:
-    name: Update ${{ matrix.package }} to ${{ matrix.version }}
+    name: Update ${{ matrix.package }} to ${{ matrix.kind == 'aur' && 'AUR ' || '' }}${{ matrix.version }}
     needs: check
     if: needs.check.outputs.updates != '[]' && needs.check.outputs.updates != ''
     runs-on: ubuntu-latest
@@ -73,5 +73,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ matrix.package }}
+          KIND: ${{ matrix.kind }}
           VERSION: ${{ matrix.version }}
-        run: scripts/ci/propose-update.sh "$PACKAGE" "$VERSION"
+          COMMIT: ${{ matrix.commit }}
+        run: |
+          if [[ "$KIND" == "aur" ]]; then
+            scripts/ci/propose-aur.sh "$PACKAGE" "$COMMIT"
+          else
+            scripts/ci/propose-update.sh "$PACKAGE" "$VERSION"
+          fi

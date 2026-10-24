@@ -10,6 +10,9 @@
 #        c. HEAD~1
 #   3. If no usable base exists (first commit, history rewritten), build everything.
 #
+# A change to any file under packages/<name>/ selects it: for AUR-linked
+# packages that includes moving the pin in aur.conf.
+#
 # Each run builds one package. Writes the step outputs:
 #   packages  every selected name, space-separated (empty: nothing to build)
 #   package   the name when exactly one is selected, so this run builds it
@@ -26,20 +29,14 @@
 set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(dirname "$0")/../lib/common.sh"
+# shellcheck source=../lib/aur.sh
+source "$(dirname "$0")/../lib/aur.sh"
 
 require_cmd git
 
 cd "$REPO_ROOT"
 
 ZERO_SHA="0000000000000000000000000000000000000000"
-
-all_packages() {
-  local pkgbuild
-  for pkgbuild in "$PACKAGES_DIR"/*/PKGBUILD; do
-    [[ -f "$pkgbuild" ]] || continue
-    basename "$(dirname "$pkgbuild")"
-  done
-}
 
 # A base is usable when it exists locally and is an ancestor of HEAD.
 usable_base() {
@@ -79,7 +76,7 @@ if [[ -n "${INPUT_PACKAGES:-}" ]]; then
     selected=()
     read -r -a requested <<<"$INPUT_PACKAGES"
     for name in "${requested[@]}"; do
-      [[ -f "$PACKAGES_DIR/$name/PKGBUILD" ]] || die "no such package: packages/$name"
+      is_package "$name" || die "no such package: packages/$name"
       selected+=("$name")
     done
   fi
@@ -110,10 +107,10 @@ log "diffing packages/ against base ${base}"
 selected=()
 while IFS= read -r name; do
   [[ -n "$name" ]] || continue
-  if [[ -f "$PACKAGES_DIR/$name/PKGBUILD" ]]; then
+  if is_package "$name"; then
     selected+=("$name")
   else
-    warn "packages/$name changed but has no PKGBUILD (removed?); skipping"
+    warn "packages/$name changed but has no PKGBUILD or aur.conf (removed?); skipping"
   fi
 done < <(
   git diff --name-only --no-renames "$base" HEAD -- packages/ \

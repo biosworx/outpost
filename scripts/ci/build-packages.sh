@@ -11,14 +11,20 @@
 # - A failing package does not stop the others. Failures are reported via
 #   the step output "failed" so publishing can still go ahead for the rest.
 # - Built package paths are appended to $OUT_DIR/.built for publish.sh.
+# - AUR-linked packages are resolved first (lib/aur.sh): the pinned AUR
+#   files or the override, copied to a work directory and built there.
 #
 # Env: OUT_DIR (with the pulled database), GPGKEY (from setup-gpg.sh).
 
 set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(dirname "$0")/../lib/common.sh"
+# shellcheck source=../lib/vercmp.sh
+source "$(dirname "$0")/../lib/vercmp.sh"
+# shellcheck source=../lib/aur.sh
+source "$(dirname "$0")/../lib/aur.sh"
 
-require_cmd makepkg bsdtar
+require_cmd makepkg bsdtar git
 
 if [[ $# -eq 0 && -n "${PACKAGES:-}" ]]; then
   read -r -a pkgs <<<"$PACKAGES"
@@ -41,6 +47,7 @@ built_list="${OUT_DIR}/.built"
 export PKGDEST="${OUT_DIR}/.pkgdest"
 export SRCDEST="${SRCDEST:-${OUT_DIR}/.srcdest}"
 as_builder mkdir -p "$PKGDEST" "$SRCDEST"
+work_root="${OUT_DIR}/.work"
 
 mapfile -t published < <(db_filenames "${OUT_DIR}/${DB_ARCHIVE}")
 
@@ -57,15 +64,19 @@ skipped=()
 failed=()
 
 for name in "${pkgs[@]}"; do
-  dir="${PACKAGES_DIR}/${name}"
   group_start "Building ${name}"
 
-  if [[ ! -f "${dir}/PKGBUILD" ]]; then
-    warn "packages/${name}/PKGBUILD not found"
+  # Resolve into a fresh directory the build user owns.
+  dir="${work_root}/${name}"
+  rm -rf "$dir"
+  if ! resolve_package "$name" "$dir"; then
+    warn "${name}: could not resolve packages/${name}"
     failed+=("$name")
     group_end
     continue
   fi
+  chown -R "${BUILD_USER:-builder}:" "$work_root" 2>/dev/null || true
+  log "${name}: building $(describe_resolution "$name")"
 
   # --packagelist evaluates the PKGBUILD without building. VCS packages with
   # a pkgver() function only know their version after fetching sources, so
@@ -94,7 +105,7 @@ for name in "${pkgs[@]}"; do
   before="$(mktemp)"
   find "$PKGDEST" -maxdepth 1 -name '*.pkg.tar.zst' | sort >"$before"
 
-  if import_source_keys "$dir" \
+  if import_source_keys "${PACKAGES_DIR}/${name}" && import_source_keys "$dir" \
        && (cd "$dir" && as_builder makepkg --syncdeps --noconfirm --cleanbuild --clean --sign); then
     mapfile -t new_files < <(
       find "$PKGDEST" -maxdepth 1 -name '*.pkg.tar.zst' | sort | comm -13 "$before" -
@@ -129,6 +140,7 @@ for name in "${pkgs[@]}"; do
     failed+=("$name")
   fi
   rm -f "$before"
+  rm -rf "$dir"
   group_end
 done
 

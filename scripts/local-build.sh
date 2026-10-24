@@ -2,7 +2,8 @@
 #
 # Build a package from packages/<name> in a clean chroot, the same way an
 # official Arch package would be built, so missing (make)depends show up
-# before CI does.
+# before CI does. AUR-linked packages build what CI would: the pinned AUR
+# files, or override/ when it takes precedence.
 #
 # Usage: scripts/local-build.sh [options] <name>
 #
@@ -22,6 +23,10 @@
 set -euo pipefail
 # shellcheck source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
+# shellcheck source=lib/vercmp.sh
+source "$(dirname "$0")/lib/vercmp.sh"
+# shellcheck source=lib/aur.sh
+source "$(dirname "$0")/lib/aur.sh"
 
 usage() {
   sed -n '3,/^$/{s/^# \{0,1\}//;p}' "$0"
@@ -49,10 +54,9 @@ done
 [[ -n "$name" ]] || usage 1
 [[ "$(id -u)" -ne 0 ]] || die "run as a regular user; sudo is used where needed"
 [[ -f /etc/arch-release ]] || warn "this does not look like an Arch-based host"
-require_cmd mkarchroot arch-nspawn makechrootpkg sudo
+require_cmd mkarchroot arch-nspawn makechrootpkg sudo git
 
-pkg_src="${PACKAGES_DIR}/${name}"
-[[ -f "${pkg_src}/PKGBUILD" ]] || die "no PKGBUILD at packages/${name}"
+is_package "$name" || die "no PKGBUILD or aur.conf at packages/${name}"
 
 CHROOT_DIR="${CHROOT_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/outpost/chroot}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/out}"
@@ -82,9 +86,9 @@ fi
 # --- Build in a throwaway copy so the checkout stays clean ---------------------------
 work="$(mktemp -d "${TMPDIR:-/tmp}/outpost-${name}.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-cp -a "${pkg_src}/." "$work/"
+resolve_package "$name" "$work" || die "could not resolve packages/${name}"
 
-log "building ${name} in clean chroot"
+log "building ${name} in clean chroot: $(describe_resolution "$name")"
 (
   cd "$work"
   PKGDEST="$OUTPUT_DIR" makechrootpkg -c -r "$CHROOT_DIR" -- --noconfirm
@@ -106,7 +110,7 @@ fi
 if [[ "$run_namcap" -eq 1 ]]; then
   if command -v namcap >/dev/null 2>&1; then
     log "namcap: PKGBUILD"
-    namcap "${pkg_src}/PKGBUILD" || true
+    namcap "${work}/PKGBUILD" || true
     for pkg in "${built[@]}"; do
       [[ -f "$pkg" ]] || continue
       log "namcap: $(basename "$pkg")"

@@ -2,7 +2,8 @@
 
 My own AUR-like repo because user account registration is closed right now.
 
-PKGBUILDs in [`packages/`](packages/) are built and signed in CI, then
+Packages in [`packages/`](packages/) are AUR packages, built from pinned AUR
+commits (or a local override when AUR lags behind) and signed in CI, then
 published as the pacman repository **`[aurstrich]`**.
 
 ## Why AURstrich?
@@ -55,9 +56,22 @@ sudo pacman -Sy
 
 ## Maintaining
 
-- **Add a package:** `scripts/add-package.sh <name>`, edit the PKGBUILD, run
-  `updpkgsums`, test with `scripts/local-build.sh <name>` (needs `devtools`),
-  then push to `main`.
+- **Packages come from the AUR.** `packages/<name>/aur.conf` links the AUR
+  original and pins a reviewed commit (`pkgbase=` when the AUR package base
+  has another name, `commit=` always). CI fetches AUR's files at that commit
+  and builds them; nothing from AUR is built until its commit is pinned here.
+- **Overrides:** `packages/<name>/override/` holds a full PKGBUILD (and its
+  files) that takes precedence over AUR's while its `epoch:pkgver-pkgrel` is
+  newer, e.g. a release the AUR maintainer hasn't packaged yet. Once AUR's
+  version is equal or newer, AUR's is built again and the daily check opens
+  a PR deleting the override. For changes AUR will never have, put
+  `permanent=1` in `override/override.conf`: that override is always built.
+  Start one with `scripts/add-override.sh [--permanent] <name>`.
+- **Add a package:** `scripts/add-package.sh <name>` links it to AUR at the
+  current commit (`--override` also starts an override; `--standalone`
+  writes a template PKGBUILD for software not on AUR). Read the PKGBUILD,
+  test with `scripts/local-build.sh <name>` (needs `devtools`; builds
+  whatever CI would), then push to `main`.
 - **CI** builds only the packages that changed since the last successful
   push run, one package per workflow run. When a push changes several, its
   run starts one run per package and builds nothing itself, so each package
@@ -69,14 +83,21 @@ sudo pacman -Sy
   To rebuild by hand, run the workflow with a package list or `all`.
 - **Republishing the same version needs a `pkgrel` bump.** CI skips versions
   already in the database.
-- **Automatic updates:** packages with an `update.conf` (see
-  [`packages/legcord/update.conf`](packages/legcord/update.conf)) are checked
-  daily. A new upstream version gets a test build and a PR: a ready PR if the
-  build passed, a draft PR with the build log if it failed. Merge it to
-  publish. Run *Check for package updates* by hand to check now.
+- **Automatic updates** run daily (or by hand: *Check for package updates*).
+  Each proposal gets a test build and a PR: ready if the build passed, a
+  draft with the build log if it failed. Merge it to publish.
+  - *AUR moved past the pin:* an `aur/<name>-<commit>` PR moves the pin and
+    shows AUR's diff. Review it: merging is what lets CI build and sign the
+    new AUR code. It also deletes an override AUR has caught up with, and
+    flags new AUR commits under a permanent override for you to carry over.
+  - *Upstream released something newer than both the build and AUR's latest*
+    (packages with an `update.conf`, see
+    [`packages/legcord/update.conf`](packages/legcord/update.conf)): an
+    `update/<name>-<version>` PR bumps the override, creating one from AUR's
+    files when there is none.
 - **Signed sources:** for a PKGBUILD with `validpgpkeys`, commit each key as
-  `packages/<name>/keys/pgp/<fingerprint>.asc`; CI imports them before
-  building.
+  `packages/<name>/keys/pgp/<fingerprint>.asc` (keys AUR ships in its own
+  `keys/pgp/` work too); CI imports them before building.
 - **Packages that depend on each other:** push the dependency first. Packages
   changed in the same push are built in no particular order.
 - **Removing a package:** run the *Remove package* workflow with its name

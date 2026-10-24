@@ -1,21 +1,34 @@
 #!/usr/bin/env bash
 #
-# Scaffold a new package directory with an annotated template PKGBUILD.
+# Add a package directory.
 #
-# Usage: scripts/add-package.sh [--arch any|x86_64] <name>
+# Usage: scripts/add-package.sh [options] <name>
 #
-# Creates packages/<name>/PKGBUILD. Refuses to touch an existing directory.
+# By default the package is linked to its AUR original: packages/<name>/aur.conf
+# pins the current AUR commit, and CI builds AUR's files from it.
+#
+# Options:
+#   -o, --override         also copy AUR's files into override/ to edit
+#   -s, --standalone       not on AUR: write an annotated template PKGBUILD
+#   -a, --arch any|x86_64  template arch (with --standalone; default x86_64)
+#   -h, --help             show this help
+#
+# Refuses to touch an existing directory.
 
 set -euo pipefail
 # shellcheck source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
+# shellcheck source=lib/vercmp.sh
+source "$(dirname "$0")/lib/vercmp.sh"
+# shellcheck source=lib/aur.sh
+source "$(dirname "$0")/lib/aur.sh"
 
 usage() {
   sed -n '3,/^$/{s/^# \{0,1\}//;p}' "$0"
   exit "${1:-0}"
 }
 
-arch="x86_64" name=""
+arch="x86_64" name="" standalone=0 override=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -a|--arch)
@@ -23,6 +36,8 @@ while [[ $# -gt 0 ]]; do
       arch="$2"
       shift
       ;;
+    -s|--standalone) standalone=1 ;;
+    -o|--override) override=1 ;;
     -h|--help) usage 0 ;;
     -*) warn "unknown option: $1"; usage 1 ;;
     *)
@@ -38,6 +53,7 @@ case "$arch" in
   any|x86_64) ;;
   *) die "--arch must be 'any' or 'x86_64'" ;;
 esac
+[[ "$standalone" -eq 0 || "$override" -eq 0 ]] || die "--override needs an AUR package; drop --standalone"
 
 # makepkg rules: lowercase alphanumerics and @._+-, not starting with - or .
 if [[ ! "$name" =~ ^[a-z0-9@_+][a-z0-9@._+-]*$ ]]; then
@@ -47,6 +63,49 @@ fi
 target="${PACKAGES_DIR}/${name}"
 [[ ! -e "$target" ]] || die "packages/${name} already exists"
 
+# --- AUR-linked ----------------------------------------------------------------------
+if [[ "$standalone" -eq 0 ]]; then
+  require_cmd curl jq git
+  info="$(curl -fsS "${AUR_URL}/rpc/v5/info?arg[]=${name}")" || die "could not query the AUR"
+  base="$(jq -r '.results[0].PackageBase // empty' <<<"$info")"
+  [[ -n "$base" ]] || die "${name} is not on the AUR; use --standalone for a template PKGBUILD"
+  work="$(mktemp -d)"
+  trap 'rm -rf "$work"' EXIT
+  aur_clone "$base" "" "${work}/aur" || die "could not clone AUR ${base}"
+  commit="$(git -C "${work}/aur" rev-parse HEAD)"
+
+  mkdir -p "$target"
+  {
+    printf '# AUR original this package builds from. The pin moves through PRs\n'
+    printf '# opened by the daily check (scripts/ci/propose-aur.sh).\n'
+    [[ "$base" == "$name" ]] || printf 'pkgbase=%s\n' "$base"
+    printf 'commit=%s\n' "$commit"
+  } >"${target}/aur.conf"
+  ok "linked packages/${name} to AUR ${base} $(srcinfo_version "${work}/aur") (${commit:0:12})"
+  [[ "$base" == "$name" ]] || warn "AUR ${base} is a split package: building from AUR makes all of its packages"
+
+  next="Read AUR's PKGBUILD: CI builds and signs exactly that."
+  if [[ "$override" -eq 1 ]]; then
+    create_override "$name" "${work}/aur" "edited by hand."
+    ok "copied AUR's files to packages/${name}/override/"
+    next="Edit packages/${name}/override/. Bump pkgver or pkgrel past AUR's, or
+     put permanent=1 in override/override.conf; otherwise AUR still wins."
+  fi
+
+  cat >&2 <<EOF
+
+Next steps:
+  1. ${next}
+  2. Build in a clean chroot: scripts/local-build.sh ${name}
+  3. Optional: add packages/${name}/update.conf for automatic update PRs
+     (copy packages/legcord/update.conf). Upstream releases AUR lacks then
+     arrive as override PRs.
+  4. Commit and push; CI builds, signs and publishes it to [${REPO_NAME}].
+EOF
+  exit 0
+fi
+
+# --- Standalone ------------------------------------------------------------------------
 maintainer_name="$(git -C "$REPO_ROOT" config user.name 2>/dev/null || true)"
 maintainer_email="$(git -C "$REPO_ROOT" config user.email 2>/dev/null || true)"
 maintainer="${maintainer_name:-Your Name} <${maintainer_email:-you@example.com}>"

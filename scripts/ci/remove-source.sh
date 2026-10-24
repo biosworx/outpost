@@ -5,7 +5,8 @@
 #
 # Usage: remove-source.sh <name>
 #
-#   1. close open update/<name>-* PRs (and delete their branches)
+#   1. close open update/<name>-* and aur/<name>-* PRs (and delete their
+#      branches)
 #   2. git rm -r packages/<name>, commit and push to the current branch
 #
 # Env: GH_TOKEN, GITHUB_REPOSITORY, GITHUB_ACTOR (credited in the commit),
@@ -34,7 +35,7 @@ if [[ "$dry_run" != "1" ]]; then
     log "closed PR #${pr}"
   done < <(
     gh pr list --repo "$GITHUB_REPOSITORY" --state open --json number,headRefName \
-      --jq ".[] | select(.headRefName | startswith(\"update/${name}-\")) | .number"
+      --jq ".[] | select(.headRefName | startswith(\"update/${name}-\") or startswith(\"aur/${name}-\")) | .number"
   )
   group_end
 fi

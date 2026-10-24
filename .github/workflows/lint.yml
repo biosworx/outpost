@@ -33,16 +33,7 @@ jobs:
       - name: Install tooling
         run: pacman -Syu --noconfirm --needed git namcap
       - uses: actions/checkout@v7
-      - name: Check PKGBUILDs
+      - name: Check packages
         run: |
           useradd -m builder
-          chown -R builder "$GITHUB_WORKSPACE"
-          status=0
-          for dir in packages/*/; do
-            [ -f "$dir/PKGBUILD" ] || continue
-            echo "==> $dir"
-            # Parse without building; catches syntax errors and bad metadata.
-            ( cd "$dir" && sudo -u builder makepkg --printsrcinfo >/dev/null ) || status=1
-            namcap "$dir/PKGBUILD" || status=1
-          done
-          exit "$status"
+          scripts/ci/lint-packages.sh
