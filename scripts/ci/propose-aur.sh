@@ -7,7 +7,7 @@
 # Usage: propose-aur.sh <name> <commit>
 #
 #   1. branch aur/<name>-<commit:0:12> from the current HEAD
-#   2. commit=<commit> in packages/<name>/aur.conf (when it changes)
+#   2. commit=<commit> in packages/<l>/<name>/aur.conf (when it changes)
 #   3. the override, if any:
 #        stale (not newer than AUR at <commit>)  deleted
 #        active (still newer)                    kept, noted
@@ -41,11 +41,11 @@ dry_run="${DRY_RUN:-0}"
 require_cmd git makepkg sudo
 [[ "$dry_run" == "1" ]] || { require_cmd gh; require_env GH_TOKEN GITHUB_REPOSITORY; }
 
-is_aur_linked "$name" || die "packages/${name} has no aur.conf"
+is_aur_linked "$name" || die "$(pkg_path "$name") has no aur.conf"
 aur_validate "$name"
 [[ "$new" =~ ^[0-9a-f]{40}$ ]] || die "invalid commit: $new"
 
-pkg_dir="${PACKAGES_DIR}/${name}"
+pkg_dir="$(pkg_dir "$name")"
 conf="${pkg_dir}/aur.conf"
 base="$(aur_pkgbase "$name")" old="$(aur_commit "$name")"
 branch="aur/${name}-${new:0:12}"
@@ -80,7 +80,7 @@ group_end
 sed -i "s/^\([[:space:]]*commit[[:space:]]*=\).*/\1${new}/" "$conf"
 [[ "$(aur_commit "$name")" == "$new" ]] || die "could not update commit= in aur.conf"
 
-resolve_package "$name" "${work}/build" "${work}/aur" || die "could not resolve packages/${name}"
+resolve_package "$name" "${work}/build" "${work}/aur" || die "could not resolve $(pkg_path "$name")"
 override_note=""
 case "$OVERRIDE_STATE" in
   stale)

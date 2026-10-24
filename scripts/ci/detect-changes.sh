@@ -10,7 +10,7 @@
 #        c. HEAD~1
 #   3. If no usable base exists (first commit, history rewritten), build everything.
 #
-# A change to any file under packages/<name>/ selects it: for AUR-linked
+# A change to any file under packages/<l>/<name>/ selects it: for AUR-linked
 # packages that includes moving the pin in aur.conf.
 #
 # Each run builds one package. Writes the step outputs:
@@ -76,7 +76,7 @@ if [[ -n "${INPUT_PACKAGES:-}" ]]; then
     selected=()
     read -r -a requested <<<"$INPUT_PACKAGES"
     for name in "${requested[@]}"; do
-      is_package "$name" || die "no such package: packages/$name"
+      is_package "$name" || die "no such package: $(pkg_path "$name")"
       selected+=("$name")
     done
   fi
@@ -110,11 +110,11 @@ while IFS= read -r name; do
   if is_package "$name"; then
     selected+=("$name")
   else
-    warn "packages/$name changed but has no PKGBUILD or aur.conf (removed?); skipping"
+    warn "$(pkg_path "$name") changed but has no PKGBUILD or aur.conf (removed?); skipping"
   fi
 done < <(
   git diff --name-only --no-renames "$base" HEAD -- packages/ \
-    | awk -F/ 'NF >= 3 && $1 == "packages" { print $2 }' \
+    | awk -F/ 'NF >= 4 && $1 == "packages" { print $3 }' \
     | sort -u
 )
 

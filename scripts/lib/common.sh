@@ -31,6 +31,12 @@ B2_DOWNLOAD_HOST="${B2_DOWNLOAD_HOST:-https://f003.backblazeb2.com}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PACKAGES_DIR="${REPO_ROOT}/packages"
 
+# Packages live under their first letter, packages/<l>/<name>, so packages/
+# stays browsable as the list grows. pkg_path is repo-relative (for messages
+# and git), pkg_dir absolute.
+pkg_path() { printf 'packages/%s/%s' "${1:0:1}" "$1"; }
+pkg_dir() { printf '%s/%s' "$REPO_ROOT" "$(pkg_path "$1")"; }
+
 # Working directory holding the repo database and freshly built packages.
 OUT_DIR="${OUT_DIR:-${REPO_ROOT}/.repo}"
 

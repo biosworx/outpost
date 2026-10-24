@@ -56,11 +56,13 @@ sudo pacman -Sy
 
 ## Maintaining
 
-- **Packages come from the AUR.** `packages/<name>/aur.conf` links the AUR
+- **Layout:** each package lives under its first letter, `packages/<l>/<name>/`
+  (e.g. `packages/l/legcord/`); the scripts find it from the name alone.
+- **Packages come from the AUR.** `packages/<l>/<name>/aur.conf` links the AUR
   original and pins a reviewed commit (`pkgbase=` when the AUR package base
   has another name, `commit=` always). CI fetches AUR's files at that commit
   and builds them; nothing from AUR is built until its commit is pinned here.
-- **Overrides:** `packages/<name>/override/` holds a full PKGBUILD (and its
+- **Overrides:** `packages/<l>/<name>/override/` holds a full PKGBUILD (and its
   files) that takes precedence over AUR's while its `epoch:pkgver-pkgrel` is
   newer, e.g. a release the AUR maintainer hasn't packaged yet. Once AUR's
   version is equal or newer, AUR's is built again and the daily check opens
@@ -92,17 +94,17 @@ sudo pacman -Sy
     flags new AUR commits under a permanent override for you to carry over.
   - *Upstream released something newer than both the build and AUR's latest*
     (packages with an `update.conf`, see
-    [`packages/legcord/update.conf`](packages/legcord/update.conf)): an
+    [`packages/l/legcord/update.conf`](packages/l/legcord/update.conf)): an
     `update/<name>-<version>` PR bumps the override, creating one from AUR's
     files when there is none.
 - **Signed sources:** for a PKGBUILD with `validpgpkeys`, commit each key as
-  `packages/<name>/keys/pgp/<fingerprint>.asc` (keys AUR ships in its own
+  `packages/<l>/<name>/keys/pgp/<fingerprint>.asc` (keys AUR ships in its own
   `keys/pgp/` work too); CI imports them before building.
 - **Packages that depend on each other:** push the dependency first. Packages
   changed in the same push are built in no particular order.
 - **Removing a package:** run the *Remove package* workflow with its name
   (typed twice). It drops the package from the database, deletes its files
-  from B2, closes pending update PRs and deletes `packages/<name>/`.
+  from B2, closes pending update PRs and deletes `packages/<l>/<name>/`.
 - **Secrets:** `scripts/set-secrets.sh` checks every value and stores it in
   GitHub.
 - **Infrastructure:** [docs/cloudflare-setup.md](docs/cloudflare-setup.md).

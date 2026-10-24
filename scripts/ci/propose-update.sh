@@ -6,8 +6,8 @@
 #
 #   1. branch update/<name>-<version> from the current HEAD
 #   2. pick the PKGBUILD to bump:
-#        standalone   packages/<name>/PKGBUILD
-#        AUR-linked   packages/<name>/override/PKGBUILD; when there is no
+#        standalone   packages/<l>/<name>/PKGBUILD
+#        AUR-linked   packages/<l>/<name>/override/PKGBUILD; when there is no
 #                     override, or only a stale one, it is first copied from
 #                     AUR at the pinned commit. The new override is newer than
 #                     AUR, so it takes precedence until AUR catches up.
@@ -42,8 +42,8 @@ dry_run="${DRY_RUN:-0}"
 require_cmd git makepkg updpkgsums sudo
 [[ "$dry_run" == "1" ]] || { require_cmd gh; require_env GH_TOKEN GITHUB_REPOSITORY; }
 
-pkg_dir="${PACKAGES_DIR}/${name}"
-is_package "$name" || die "no PKGBUILD or aur.conf at packages/${name}"
+pkg_dir="$(pkg_dir "$name")"
+is_package "$name" || die "no PKGBUILD or aur.conf at $(pkg_path "$name")"
 [[ "$version" =~ ^[0-9][A-Za-z0-9._+]*$ ]] || die "invalid pkgver: $version"
 
 branch="update/${name}-${version}"
@@ -59,16 +59,16 @@ note=""
 if is_aur_linked "$name"; then
   dir="${pkg_dir}/override"
   base="$(aur_pkgbase "$name")"
-  resolve_package "$name" "${work}/resolved" || die "could not resolve packages/${name}"
+  resolve_package "$name" "${work}/resolved" || die "could not resolve $(pkg_path "$name")"
   if [[ "$OVERRIDE_STATE" == "none" || "$OVERRIDE_STATE" == "stale" ]]; then
     group_start "Creating override from AUR ${base} ${AUR_VERSION}"
     # resolve_package built from AUR, so its copy is AUR's files at the pin.
     create_override "$name" "${work}/resolved" \
       "bumped to upstream ${version}, which AUR lacks. Retired once AUR catches up."
-    note="AUR \`${base}\` is still at \`${AUR_VERSION}\`, so this adds \`packages/${name}/override/\` (AUR's files at the pin, bumped). It takes precedence until AUR catches up, then the daily AUR check proposes deleting it."
+    note="AUR \`${base}\` is still at \`${AUR_VERSION}\`, so this adds \`$(pkg_path "$name")/override/\` (AUR's files at the pin, bumped). It takes precedence until AUR catches up, then the daily AUR check proposes deleting it."
     group_end
   else
-    note="Bumps the ${OVERRIDE_STATE} override in \`packages/${name}/override/\` (AUR \`${base}\` is at \`${AUR_VERSION}\`)."
+    note="Bumps the ${OVERRIDE_STATE} override in \`$(pkg_path "$name")/override/\` (AUR \`${base}\` is at \`${AUR_VERSION}\`)."
   fi
 else
   dir="$pkg_dir"

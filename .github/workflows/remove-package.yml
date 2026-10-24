@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       package:
-        description: "Package to remove (directory name under packages/)"
+        description: "Package to remove (directory name under packages/<l>/)"
         required: true
       confirm:
         description: "Type the package name again to confirm"
         required: true
       delete_source:
-        description: "Also delete packages/<name> from this repository"
+        description: "Also delete packages/<l>/<name> from this repository"
         type: boolean
         default: true
 

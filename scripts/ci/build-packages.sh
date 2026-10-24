@@ -70,7 +70,7 @@ for name in "${pkgs[@]}"; do
   dir="${work_root}/${name}"
   rm -rf "$dir"
   if ! resolve_package "$name" "$dir"; then
-    warn "${name}: could not resolve packages/${name}"
+    warn "${name}: could not resolve $(pkg_path "$name")"
     failed+=("$name")
     group_end
     continue
@@ -105,7 +105,7 @@ for name in "${pkgs[@]}"; do
   before="$(mktemp)"
   find "$PKGDEST" -maxdepth 1 -name '*.pkg.tar.zst' | sort >"$before"
 
-  if import_source_keys "${PACKAGES_DIR}/${name}" && import_source_keys "$dir" \
+  if import_source_keys "$(pkg_dir "$name")" && import_source_keys "$dir" \
        && (cd "$dir" && as_builder makepkg --syncdeps --noconfirm --cleanbuild --clean --sign); then
     mapfile -t new_files < <(
       find "$PKGDEST" -maxdepth 1 -name '*.pkg.tar.zst' | sort | comm -13 "$before" -

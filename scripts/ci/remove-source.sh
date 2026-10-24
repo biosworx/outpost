@@ -7,7 +7,7 @@
 #
 #   1. close open update/<name>-* and aur/<name>-* PRs (and delete their
 #      branches)
-#   2. git rm -r packages/<name>, commit and push to the current branch
+#   2. git rm -r packages/<l>/<name>, commit and push to the current branch
 #
 # Env: GH_TOKEN, GITHUB_REPOSITORY, GITHUB_ACTOR (credited in the commit),
 #      DRY_RUN=1 to stop before pushing or touching PRs.
@@ -41,7 +41,7 @@ if [[ "$dry_run" != "1" ]]; then
 fi
 
 # --- 2. Delete the source ------------------------------------------------------------
-dir="packages/${name}"
+dir="$(pkg_path "$name")"
 if [[ ! -d "$dir" ]] || [[ -z "$(git ls-files -- "$dir")" ]]; then
   log "${dir} is not in the repository; nothing to delete"
   exit 0

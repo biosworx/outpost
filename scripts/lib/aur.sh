@@ -5,18 +5,18 @@
 #
 # A package directory takes one of two shapes:
 #
-#   standalone   packages/<name>/PKGBUILD (+ its files), built as is
-#   AUR-linked   packages/<name>/aur.conf links the AUR original:
+#   standalone   packages/<l>/<name>/PKGBUILD (+ its files), built as is
+#   AUR-linked   packages/<l>/<name>/aur.conf links the AUR original:
 #                  pkgbase=<AUR package base>   (default: <name>)
 #                  commit=<40-hex AUR git commit, the reviewed pin>
-#                packages/<name>/override/ optionally holds a full PKGBUILD
+#                packages/<l>/<name>/override/ optionally holds a full PKGBUILD
 #                (+ files) that takes precedence:
 #                  - while its epoch:pkgver-pkgrel is newer than AUR's, or
 #                  - always, with permanent=1 in override/override.conf
 #                Once AUR catches up, a non-permanent override is stale: AUR
 #                is built and the daily check proposes deleting it.
 #
-# update.conf and keys/pgp/ stay at packages/<name>/ in both shapes.
+# update.conf and keys/pgp/ stay at packages/<l>/<name>/ in both shapes.
 
 AUR_URL="${AUR_URL:-https://aur.archlinux.org}"
 
@@ -30,16 +30,16 @@ conf_get() {
   ' "$1"
 }
 
-is_aur_linked() { [[ -f "${PACKAGES_DIR}/$1/aur.conf" ]]; }
+is_aur_linked() { [[ -f "$(pkg_dir "$1")/aur.conf" ]]; }
 
-# Whether packages/<name> is a package at all (either shape).
+# Whether packages/<l>/<name> is a package at all (either shape).
 is_package() {
-  [[ -f "${PACKAGES_DIR}/$1/PKGBUILD" || -f "${PACKAGES_DIR}/$1/aur.conf" ]]
+  [[ -f "$(pkg_dir "$1")/PKGBUILD" || -f "$(pkg_dir "$1")/aur.conf" ]]
 }
 
 all_packages() {
   local dir
-  for dir in "$PACKAGES_DIR"/*/; do
+  for dir in "$PACKAGES_DIR"/*/*/; do
     dir="${dir%/}"
     is_package "${dir##*/}" && printf '%s\n' "${dir##*/}"
   done
@@ -48,16 +48,16 @@ all_packages() {
 
 aur_pkgbase() {
   local base
-  base="$(conf_get "${PACKAGES_DIR}/$1/aur.conf" pkgbase)"
+  base="$(conf_get "$(pkg_dir "$1")/aur.conf" pkgbase)"
   printf '%s' "${base:-$1}"
 }
 
-aur_commit() { conf_get "${PACKAGES_DIR}/$1/aur.conf" commit; }
+aur_commit() { conf_get "$(pkg_dir "$1")/aur.conf" commit; }
 
-has_override() { [[ -f "${PACKAGES_DIR}/$1/override/PKGBUILD" ]]; }
+has_override() { [[ -f "$(pkg_dir "$1")/override/PKGBUILD" ]]; }
 
 override_is_permanent() {
-  [[ "$(conf_get "${PACKAGES_DIR}/$1/override/override.conf" permanent)" == "1" ]]
+  [[ "$(conf_get "$(pkg_dir "$1")/override/override.conf" permanent)" == "1" ]]
 }
 
 # Check aur.conf (and override.conf) for a package; dies on bad values,
@@ -68,10 +68,10 @@ aur_validate() {
   commit="$(aur_commit "$name")"
   [[ "$base" =~ ^[a-z0-9@_+][a-z0-9@._+-]*$ ]] || die "${name}: invalid pkgbase '${base}' in aur.conf"
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "${name}: aur.conf needs commit=<full 40-hex AUR commit>, got '${commit}'"
-  if [[ -f "${PACKAGES_DIR}/${name}/override/override.conf" ]] && ! has_override "$name"; then
+  if [[ -f "$(pkg_dir "$name")/override/override.conf" ]] && ! has_override "$name"; then
     die "${name}: override/override.conf without override/PKGBUILD"
   fi
-  if [[ -f "${PACKAGES_DIR}/${name}/PKGBUILD" ]]; then
+  if [[ -f "$(pkg_dir "$name")/PKGBUILD" ]]; then
     die "${name}: has both aur.conf and a top-level PKGBUILD; move the PKGBUILD to override/"
   fi
 }
@@ -127,10 +127,10 @@ pkgbuild_version() {
 #   OVERRIDE_VERSION   version of override/ (empty without one)
 #   OVERRIDE_STATE     none | active | permanent | stale
 resolve_package() {
-  local name="$1" dest="$2" checkout="${3:-}" src="${PACKAGES_DIR}/$1" tmp=""
+  local name="$1" dest="$2" checkout="${3:-}" src="$(pkg_dir "$1")" tmp=""
   RESOLVED_FROM="" RESOLVED_VERSION="" AUR_VERSION="" OVERRIDE_VERSION="" OVERRIDE_STATE="none"
 
-  is_package "$name" || { warn "packages/${name} is not a package"; return 1; }
+  is_package "$name" || { warn "$(pkg_path "$name") is not a package"; return 1; }
   mkdir -p "$dest"
 
   if ! is_aur_linked "$name"; then
@@ -176,12 +176,12 @@ resolve_package() {
   return 0
 }
 
-# Replace packages/<name>/override/ with a copy of the AUR files in <src>
+# Replace packages/<l>/<name>/override/ with a copy of the AUR files in <src>
 # (a checkout or a resolved copy) and credit both maintainers in its PKGBUILD,
 # keeping AUR's maintainer as a contributor. <why> continues the header line
 # "Override of AUR `<pkgbase>` (<version> at <commit>),".
 create_override() {
-  local name="$1" src="$2" why="$3" dir="${PACKAGES_DIR}/$1/override" tmp version
+  local name="$1" src="$2" why="$3" dir="$(pkg_dir "$1")/override" tmp version
   version="$(srcinfo_version "$src")"
   rm -rf "$dir"
   mkdir -p "$dir"

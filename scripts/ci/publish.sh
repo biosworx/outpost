@@ -9,7 +9,7 @@
 #   publish.sh push   Add packages listed in $OUT_DIR/.built to the database,
 #                     then upload: package files first, database second.
 #   publish.sh remove <name>
-#                     Remove packages/<name> (all its split packages) from the
+#                     Remove packages/<l>/<name> (all its split packages) from the
 #                     database and upload it; prune then deletes its files.
 #   publish.sh prune  Permanently delete package files the published database
 #                     no longer references, then every old (hidden) version
@@ -117,7 +117,7 @@ push() {
   upload_db
 }
 
-# Remove every package built from packages/<name> (matched on %BASE%, so split
+# Remove every package built from packages/<l>/<name> (matched on %BASE%, so split
 # packages go too) from the database and publish it. The package files stay
 # until `publish.sh prune`, which must run after the Cloudflare purge.
 # Sets the step output "changed" to true/false.

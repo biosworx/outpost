@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build a package from packages/<name> in a clean chroot, the same way an
+# Build a package from packages/<l>/<name> in a clean chroot, the same way an
 # official Arch package would be built, so missing (make)depends show up
 # before CI does. AUR-linked packages build what CI would: the pinned AUR
 # files, or override/ when it takes precedence.
@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
     *)
       [[ -z "$name" ]] || die "only one package name may be given"
       name="${1%/}"
-      name="${name#packages/}"
+      name="${name##*/}"
       ;;
   esac
   shift
@@ -56,7 +56,7 @@ done
 [[ -f /etc/arch-release ]] || warn "this does not look like an Arch-based host"
 require_cmd mkarchroot arch-nspawn makechrootpkg sudo git
 
-is_package "$name" || die "no PKGBUILD or aur.conf at packages/${name}"
+is_package "$name" || die "no PKGBUILD or aur.conf at $(pkg_path "$name")"
 
 CHROOT_DIR="${CHROOT_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/outpost/chroot}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/out}"
@@ -86,7 +86,7 @@ fi
 # --- Build in a throwaway copy so the checkout stays clean ---------------------------
 work="$(mktemp -d "${TMPDIR:-/tmp}/outpost-${name}.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-resolve_package "$name" "$work" || die "could not resolve packages/${name}"
+resolve_package "$name" "$work" || die "could not resolve $(pkg_path "$name")"
 
 log "building ${name} in clean chroot: $(describe_resolution "$name")"
 (

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Start an override for an AUR-linked package: copy AUR's files at the pin
-# into packages/<name>/override/ to edit.
+# into packages/<l>/<name>/override/ to edit.
 #
 # Usage: scripts/add-override.sh [--permanent] <name>
 #
@@ -35,7 +35,7 @@ while [[ $# -gt 0 ]]; do
     *)
       [[ -z "$name" ]] || die "only one package name may be given"
       name="${1%/}"
-      name="${name#packages/}"
+      name="${name##*/}"
       ;;
   esac
   shift
@@ -43,9 +43,9 @@ done
 
 [[ -n "$name" ]] || usage 1
 require_cmd git
-is_aur_linked "$name" || die "packages/${name} has no aur.conf"
+is_aur_linked "$name" || die "$(pkg_path "$name") has no aur.conf"
 aur_validate "$name"
-[[ ! -e "${PACKAGES_DIR}/${name}/override" ]] || die "packages/${name}/override already exists"
+[[ ! -e "$(pkg_dir "$name")/override" ]] || die "$(pkg_path "$name")/override already exists"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -54,7 +54,7 @@ version="$(srcinfo_version "${work}/aur")"
 
 if [[ "$permanent" -eq 1 ]]; then
   create_override "$name" "${work}/aur" "edited by hand. Permanent: see override.conf."
-  cat >"${PACKAGES_DIR}/${name}/override/override.conf" <<'EOF'
+  cat >"$(pkg_dir "$name")/override/override.conf" <<'EOF'
 # Never retire this override automatically: it carries changes AUR
 # does not have. New AUR commits still get a PR, to review for changes
 # worth carrying over.
@@ -63,14 +63,14 @@ EOF
 else
   create_override "$name" "${work}/aur" "edited by hand. Retired once AUR catches up."
 fi
-ok "copied AUR $(aur_pkgbase "$name") ${version} to packages/${name}/override/"
+ok "copied AUR $(aur_pkgbase "$name") ${version} to $(pkg_path "$name")/override/"
 
 cat >&2 <<EOF
 
 Next steps:
-  1. Edit packages/${name}/override/PKGBUILD.$(
+  1. Edit $(pkg_path "$name")/override/PKGBUILD.$(
   [[ "$permanent" -eq 1 ]] || printf '\n     Bump pkgver or pkgrel past %s, or AUR still wins.' "$version")
-  2. Refresh checksums:       (cd packages/${name}/override && updpkgsums)
+  2. Refresh checksums:       (cd $(pkg_path "$name")/override && updpkgsums)
   3. Build in a clean chroot: scripts/local-build.sh ${name}
   4. Commit and push.
 EOF

@@ -2,18 +2,18 @@
 *.pkg.tar.*
 *.src.tar.*
 *.log
-packages/*/src/
-packages/*/override/src/
-packages/*/pkg/
-packages/*/override/pkg/
-packages/*/*.tar.gz
-packages/*/override/*.tar.gz
-packages/*/*.tar.xz
-packages/*/override/*.tar.xz
-packages/*/*.tar.zst
-packages/*/override/*.tar.zst
-packages/*/*.zip
-packages/*/override/*.zip
+packages/*/*/src/
+packages/*/*/override/src/
+packages/*/*/pkg/
+packages/*/*/override/pkg/
+packages/*/*/*.tar.gz
+packages/*/*/override/*.tar.gz
+packages/*/*/*.tar.xz
+packages/*/*/override/*.tar.xz
+packages/*/*/*.tar.zst
+packages/*/*/override/*.tar.zst
+packages/*/*/*.zip
+packages/*/*/override/*.zip
 
 # Local working directories
 /.repo/

@@ -4,7 +4,7 @@
 #
 # Usage: scripts/add-package.sh [options] <name>
 #
-# By default the package is linked to its AUR original: packages/<name>/aur.conf
+# By default the package is linked to its AUR original: packages/<l>/<name>/aur.conf
 # pins the current AUR commit, and CI builds AUR's files from it.
 #
 # Options:
@@ -60,8 +60,8 @@ if [[ ! "$name" =~ ^[a-z0-9@_+][a-z0-9@._+-]*$ ]]; then
   die "invalid package name '$name' (allowed: a-z 0-9 @ . _ + -, not starting with - or .)"
 fi
 
-target="${PACKAGES_DIR}/${name}"
-[[ ! -e "$target" ]] || die "packages/${name} already exists"
+target="$(pkg_dir "$name")"
+[[ ! -e "$target" ]] || die "$(pkg_path "$name") already exists"
 
 # --- AUR-linked ----------------------------------------------------------------------
 if [[ "$standalone" -eq 0 ]]; then
@@ -81,14 +81,14 @@ if [[ "$standalone" -eq 0 ]]; then
     [[ "$base" == "$name" ]] || printf 'pkgbase=%s\n' "$base"
     printf 'commit=%s\n' "$commit"
   } >"${target}/aur.conf"
-  ok "linked packages/${name} to AUR ${base} $(srcinfo_version "${work}/aur") (${commit:0:12})"
+  ok "linked $(pkg_path "$name") to AUR ${base} $(srcinfo_version "${work}/aur") (${commit:0:12})"
   [[ "$base" == "$name" ]] || warn "AUR ${base} is a split package: building from AUR makes all of its packages"
 
   next="Read AUR's PKGBUILD: CI builds and signs exactly that."
   if [[ "$override" -eq 1 ]]; then
     create_override "$name" "${work}/aur" "edited by hand."
-    ok "copied AUR's files to packages/${name}/override/"
-    next="Edit packages/${name}/override/. Bump pkgver or pkgrel past AUR's, or
+    ok "copied AUR's files to $(pkg_path "$name")/override/"
+    next="Edit $(pkg_path "$name")/override/. Bump pkgver or pkgrel past AUR's, or
      put permanent=1 in override/override.conf; otherwise AUR still wins."
   fi
 
@@ -97,8 +97,8 @@ if [[ "$standalone" -eq 0 ]]; then
 Next steps:
   1. ${next}
   2. Build in a clean chroot: scripts/local-build.sh ${name}
-  3. Optional: add packages/${name}/update.conf for automatic update PRs
-     (copy packages/legcord/update.conf). Upstream releases AUR lacks then
+  3. Optional: add $(pkg_path "$name")/update.conf for automatic update PRs
+     (copy packages/l/legcord/update.conf). Upstream releases AUR lacks then
      arrive as override PRs.
   4. Commit and push; CI builds, signs and publishes it to [${REPO_NAME}].
 EOF
@@ -122,7 +122,7 @@ cat >"${target}/PKGBUILD" <<'PKGBUILD'
 # Reference: https://wiki.archlinux.org/title/PKGBUILD
 #            https://wiki.archlinux.org/title/Arch_package_guidelines
 
-# Package name; must match the directory name under packages/.
+# Package name; must match the directory name under packages/<l>/.
 pkgname=@PKGNAME@
 
 # Upstream version. Bump pkgrel (not pkgver) to republish the same version:
@@ -201,14 +201,14 @@ sed -i \
   -e "s|@ARCH@|${arch}|" \
   "${target}/PKGBUILD"
 
-ok "created packages/${name}/PKGBUILD"
+ok "created $(pkg_path "$name")/PKGBUILD"
 cat >&2 <<EOF
 
 Next steps:
-  1. Edit packages/${name}/PKGBUILD (search for TODO).
-  2. Fill in checksums:       (cd packages/${name} && updpkgsums)
+  1. Edit $(pkg_path "$name")/PKGBUILD (search for TODO).
+  2. Fill in checksums:       (cd $(pkg_path "$name") && updpkgsums)
   3. Build in a clean chroot: scripts/local-build.sh ${name}
-  4. Optional: add packages/${name}/update.conf for automatic update PRs
-     (copy packages/legcord/update.conf).
+  4. Optional: add $(pkg_path "$name")/update.conf for automatic update PRs
+     (copy packages/l/legcord/update.conf).
   5. Commit and push; CI builds, signs and publishes it to [${REPO_NAME}].
 EOF

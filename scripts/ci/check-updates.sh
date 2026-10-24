@@ -118,7 +118,7 @@ for name in "${names[@]}"; do
     warn "${name}: not a package; skipping"
     continue
   fi
-  conf="${PACKAGES_DIR}/${name}/update.conf"
+  conf="$(pkg_dir "$name")/update.conf"
   # Newest pkgver already covered: by what is built now, and by AUR's tip.
   covered=""
 
@@ -170,7 +170,7 @@ for name in "${names[@]}"; do
   # --- Upstream ----------------------------------------------------------------
   [[ -f "$conf" ]] || continue
   if [[ -z "$covered" ]]; then
-    covered="$(pkgver_of "$(pkgbuild_version "${PACKAGES_DIR}/${name}")")"
+    covered="$(pkgver_of "$(pkgbuild_version "$(pkg_dir "$name")")")"
   fi
   if [[ -z "$covered" ]]; then
     warn "${name}: could not read the current pkgver; skipping upstream check"

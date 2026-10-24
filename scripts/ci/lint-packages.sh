@@ -4,6 +4,7 @@
 #   - aur.conf / override.conf hold valid values and the pin exists on AUR
 #   - the PKGBUILD that would be built parses (makepkg --printsrcinfo)
 #   - namcap on that PKGBUILD
+#   - every package directory sits under its first letter, packages/<l>/<name>
 # A stale override is reported but does not fail: the daily check proposes
 # deleting it.
 #
@@ -31,6 +32,19 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 status=0
+
+# A package filed under the wrong letter (or straight in packages/) is
+# invisible to the scripts, so it would silently never build.
+for file in "$PACKAGES_DIR"/*/{PKGBUILD,aur.conf} "$PACKAGES_DIR"/*/*/{PKGBUILD,aur.conf}; do
+  [[ -f "$file" ]] || continue
+  dir="${file%/*}"
+  name="${dir##*/}"
+  if [[ "$dir" != "$(pkg_dir "$name")" ]]; then
+    warn "${dir#"${REPO_ROOT}/"} is misplaced; move it to $(pkg_path "$name")"
+    status=1
+  fi
+done
+
 for name in "${names[@]}"; do
   group_start "$name"
   dir="${work}/${name}"
