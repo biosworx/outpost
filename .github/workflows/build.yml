@@ -1,4 +1,5 @@
 name: Build and publish [aurstrich]
+run-name: ${{ inputs.packages && format('Build {0}', inputs.packages) || github.event.head_commit.message || 'Build changed packages' }}
 
 on:
   push:
@@ -20,16 +21,19 @@ permissions:
   contents: read
   actions: read # detect-changes.sh looks up the last successful run
 
-# Each package builds in its own job, so one failed or lost runner costs only
-# that package. Builds only read the database; the publish job is the single
-# writer and collects every package that built.
+# One package per run. When a push (or a manual run) selects several, this
+# run only starts one run per package and builds nothing itself. Builds only
+# read the database; the publish job is the single writer.
 jobs:
   detect:
     name: Detect changed packages
     runs-on: ubuntu-slim
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write # dispatch-builds.sh starts the per-package runs
     outputs:
-      matrix: ${{ steps.detect.outputs.matrix }}
+      package: ${{ steps.detect.outputs.package }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -46,19 +50,24 @@ jobs:
           BRANCH: main
         run: scripts/ci/detect-changes.sh
 
+      - name: Start one run per package
+        if: steps.detect.outputs.dispatch != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGES: ${{ steps.detect.outputs.dispatch }}
+          WORKFLOW_FILE: build.yml
+          BRANCH: main
+        run: scripts/ci/dispatch-builds.sh
+
   build:
-    name: Build ${{ matrix.package }}
+    name: Build ${{ needs.detect.outputs.package }}
     needs: detect
-    if: needs.detect.outputs.matrix != '[]' && needs.detect.outputs.matrix != ''
+    if: needs.detect.outputs.package != ''
     runs-on: ubuntu-latest
     timeout-minutes: 120
     container:
       image: archlinux:base-devel
       options: --privileged
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.detect.outputs.matrix) }}
 
     env:
       OUT_DIR: ${{ github.workspace }}/.repo
@@ -90,17 +99,17 @@ jobs:
       - name: Pull repository database
         run: scripts/ci/publish.sh pull
 
-      - name: Build ${{ matrix.package }}
+      - name: Build ${{ needs.detect.outputs.package }}
         id: build
         env:
-          PACKAGES: ${{ matrix.package }}
+          PACKAGES: ${{ needs.detect.outputs.package }}
         run: scripts/ci/build-packages.sh
 
       - name: Upload package
         if: steps.build.outputs.built != ''
         uses: actions/upload-artifact@v7
         with:
-          name: pkg-${{ matrix.package }}
+          name: pkg-${{ needs.detect.outputs.package }}
           # Signed packages (.pkg.tar.zst and .sig). Already zstd-compressed.
           path: .repo/.pkgdest/*.pkg.tar.zst*
           include-hidden-files: true
@@ -111,7 +120,7 @@ jobs:
       - name: Report failure
         if: steps.build.outputs.failed != ''
         env:
-          PACKAGE: ${{ matrix.package }}
+          PACKAGE: ${{ needs.detect.outputs.package }}
         run: |
           echo "::error::Failed to build ${PACKAGE}"
           exit 1
@@ -126,18 +135,20 @@ jobs:
   publish:
     name: Publish
     needs: [detect, build]
-    # Publish whatever built, even when other packages failed.
-    if: ${{ !cancelled() && needs.detect.outputs.matrix != '[]' && needs.detect.outputs.matrix != '' }}
+    if: needs.detect.outputs.package != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
       image: archlinux:base-devel
 
     # One writer to the repository database at a time; shared with the
-    # remove-package workflow. Queue, never cancel.
+    # remove-package workflow. Queue, never cancel: with one run per package,
+    # several publish jobs often wait at once, and the default queue keeps
+    # only one pending job, cancelling the rest.
     concurrency:
       group: pacman-repo-sync
       cancel-in-progress: false
+      queue: max
 
     env:
       OUT_DIR: ${{ github.workspace }}/.repo
@@ -168,7 +179,7 @@ jobs:
 
       - name: Download built packages
         uses: actions/download-artifact@v8
-        # Nothing to download when every package failed or was skipped.
+        # Nothing to download when the version was already published.
         continue-on-error: true
         with:
           pattern: pkg-*

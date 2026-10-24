@@ -40,10 +40,13 @@ sudo pacman -Sy
 - **Add a package:** `scripts/add-package.sh <name>`, edit the PKGBUILD, run
   `updpkgsums`, test with `scripts/local-build.sh <name>` (needs `devtools`),
   then push to `main`.
-- **CI** builds only the packages that changed since the last successful run,
-  each in its own job, so one failure doesn't hold up the rest. A final
-  publish job adds whatever built to the database on B2 and purges the
-  Cloudflare cache.
+- **CI** builds only the packages that changed since the last successful
+  push run, one package per workflow run. When a push changes several, its
+  run starts one run per package and builds nothing itself, so each package
+  has its own status and re-run button; a failed package is not retried by
+  the next push, so re-run its run. Each run's publish job adds the package
+  to the database on B2 and purges the Cloudflare cache; publish jobs queue
+  up and run one at a time.
   To rebuild by hand, run the workflow with a package list or `all`.
 - **Republishing the same version needs a `pkgrel` bump.** CI skips versions
   already in the database.

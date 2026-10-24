@@ -10,9 +10,15 @@
 #        c. HEAD~1
 #   3. If no usable base exists (first commit, history rewritten), build everything.
 #
-# Writes the space-separated package names to the step output "packages"
-# (empty when there is nothing to build), and the same names as a JSON array
-# to "matrix" (e.g. ["legcord","plezy-bin"]) for a build matrix.
+# Each run builds one package. Writes the step outputs:
+#   packages  every selected name, space-separated (empty: nothing to build)
+#   package   the name when exactly one is selected, so this run builds it
+#   dispatch  the names when more than one is selected; the workflow starts
+#             one run per name (dispatch-builds.sh) and builds nothing itself
+#
+# Only push runs count as "last successful run": they finish once their one
+# build, or their dispatches, succeeded. A package whose own run failed is
+# not retried by the next push; re-run that run instead.
 #
 # Env: INPUT_PACKAGES, EVENT_BEFORE, GH_TOKEN, GITHUB_REPOSITORY,
 #      WORKFLOW_FILE (default build.yml), BRANCH (default main)
@@ -49,23 +55,20 @@ last_successful_sha() {
   command -v gh >/dev/null 2>&1 || return 0
   [[ -n "${GH_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || return 0
   gh api \
-    "repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE:-build.yml}/runs?status=success&branch=${BRANCH:-main}&per_page=1" \
+    "repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE:-build.yml}/runs?status=success&event=push&branch=${BRANCH:-main}&per_page=1" \
     --jq '.workflow_runs[0].head_sha // empty' 2>/dev/null || true
 }
 
 emit() {
-  local list="$*" json="" name
-  if [[ -z "$list" ]]; then
-    ok "nothing to build"
-  else
-    ok "packages to build: $list"
-  fi
-  # Package names never need JSON escaping (a-z 0-9 @ . _ + -).
-  for name in "$@"; do
-    json+="${json:+,}\"${name}\""
-  done
+  local list="$*" single="" dispatch=""
+  case "$#" in
+    0) ok "nothing to build" ;;
+    1) ok "package to build: $list"; single="$1" ;;
+    *) ok "packages to build, one run each: $list"; dispatch="$list" ;;
+  esac
   set_output packages "$list"
-  set_output matrix "[${json}]"
+  set_output package "$single"
+  set_output dispatch "$dispatch"
 }
 
 # --- 1. Explicit selection ------------------------------------------------------

@@ -18,6 +18,7 @@ on:
 concurrency:
   group: pacman-repo-sync
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: write # push the source deletion
