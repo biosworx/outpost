@@ -45,8 +45,9 @@ sudo pacman -Sy
   run starts one run per package and builds nothing itself, so each package
   has its own status and re-run button; a failed package is not retried by
   the next push, so re-run its run. Each run's publish job adds the package
-  to the database on B2 and purges the Cloudflare cache; publish jobs queue
-  up and run one at a time.
+  to the database on B2, purges the Cloudflare cache, then permanently
+  deletes the package's old versions (and any old file versions B2 kept);
+  publish jobs queue up and run one at a time.
   To rebuild by hand, run the workflow with a package list or `all`.
 - **Republishing the same version needs a `pkgrel` bump.** CI skips versions
   already in the database.

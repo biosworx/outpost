@@ -11,11 +11,16 @@
 #   publish.sh remove <name>
 #                     Remove packages/<name> (all its split packages) from the
 #                     database and upload it; prune then deletes its files.
-#   publish.sh prune  Delete package files the published database no longer
-#                     references (run after the Cloudflare purge).
+#   publish.sh prune  Permanently delete package files the published database
+#                     no longer references, then every old (hidden) version
+#                     B2 keeps of anything under the prefix, superseded
+#                     databases included. Run after the Cloudflare purge.
 #
 # Env: B2_BUCKET, RCLONE_CONFIG_B2_{TYPE,ACCOUNT,KEY}, GPGKEY, GNUPGHOME,
 #      PRUNE (default 1; set 0 to keep superseded package files)
+#
+# Deletes are permanent: B2 would otherwise only hide a deleted file and
+# keep its bytes, and keep every overwritten database as an old version.
 
 set -euo pipefail
 # shellcheck source=../lib/common.sh
@@ -25,6 +30,7 @@ require_cmd rclone bsdtar
 require_env B2_BUCKET
 
 RCLONE_FLAGS=(--stats-one-line --stats 30s --retries 5 --low-level-retries 10)
+export RCLONE_CONFIG_B2_HARD_DELETE=true
 REMOTE="$(remote_path)"
 
 WORK_TMP="$(mktemp -d)"
@@ -240,6 +246,10 @@ prune() {
   else
     log "no stale package files"
   fi
+
+  # Old versions: overwritten databases, and files an earlier run only hid.
+  rclone cleanup "${RCLONE_FLAGS[@]}" "$REMOTE"
+  ok "removed old file versions from ${REMOTE}"
   group_end
 }
 
