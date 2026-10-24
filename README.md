@@ -52,6 +52,9 @@ sudo pacman -Sy
   publish. Run *Check for package updates* by hand to check now.
 - **Packages that depend on each other:** push the dependency first. Packages
   changed in the same push are built in no particular order.
+- **Removing a package:** run the *Remove package* workflow with its name
+  (typed twice). It drops the package from the database, deletes its files
+  from B2, closes pending update PRs and deletes `packages/<name>/`.
 - **Secrets:** `scripts/set-secrets.sh` checks every value and stores it in
   GitHub.
 - **Infrastructure:** [docs/cloudflare-setup.md](docs/cloudflare-setup.md).

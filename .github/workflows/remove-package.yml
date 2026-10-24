@@ -1,0 +1,103 @@
+name: Remove package
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package to remove (directory name under packages/)"
+        required: true
+      confirm:
+        description: "Type the package name again to confirm"
+        required: true
+      delete_source:
+        description: "Also delete packages/<name> from this repository"
+        type: boolean
+        default: true
+
+# Shares the build workflow's group: one writer to the database at a time.
+concurrency:
+  group: pacman-repo-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push the source deletion
+  pull-requests: write # close pending update PRs
+
+jobs:
+  remove:
+    name: Remove ${{ inputs.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: archlinux:base-devel
+
+    env:
+      PACKAGE: ${{ inputs.package }}
+      CONFIRM: ${{ inputs.confirm }}
+      OUT_DIR: ${{ github.workspace }}/.repo
+      B2_BUCKET: ${{ secrets.B2_BUCKET }}
+      RCLONE_CONFIG_B2_TYPE: b2
+      RCLONE_CONFIG_B2_ACCOUNT: ${{ secrets.B2_KEY_ID }}
+      RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_APP_KEY }}
+
+    steps:
+      - name: Check inputs
+        run: |
+          if [[ ! "$PACKAGE" =~ ^[a-z0-9@_+][a-z0-9@._+-]*$ ]]; then
+            echo "::error::'$PACKAGE' is not a valid package name"; exit 1
+          fi
+          if [[ "$PACKAGE" != "$CONFIRM" ]]; then
+            echo "::error::confirmation '$CONFIRM' does not match '$PACKAGE'"; exit 1
+          fi
+
+      - name: Install tooling
+        run: |
+          pacman-key --init
+          pacman -Syu --noconfirm --needed git rclone jq github-cli
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Prepare build user
+        run: scripts/ci/setup-builder.sh
+
+      - name: Import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: scripts/ci/setup-gpg.sh
+
+      - name: Pull repository database
+        run: scripts/ci/publish.sh pull
+
+      - name: Remove from database and upload
+        id: remove
+        run: scripts/ci/publish.sh remove "$PACKAGE"
+
+      - name: Purge Cloudflare cache
+        if: steps.remove.outputs.changed == 'true'
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+        run: scripts/ci/purge-cache.sh
+
+      - name: Delete package files from the bucket
+        if: steps.remove.outputs.changed == 'true'
+        run: scripts/ci/publish.sh prune
+
+      - name: Delete source and close update PRs
+        if: inputs.delete_source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/remove-source.sh "$PACKAGE"
+
+      - name: Stop gpg-agent
+        if: always()
+        run: |
+          if id builder >/dev/null 2>&1; then
+            sudo -u builder -H GNUPGHOME=/home/builder/.gnupg gpgconf --kill gpg-agent || true
+          fi

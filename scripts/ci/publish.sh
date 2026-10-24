@@ -8,6 +8,9 @@
 #                     before building.
 #   publish.sh push   Add packages listed in $OUT_DIR/.built to the database,
 #                     then upload: package files first, database second.
+#   publish.sh remove <name>
+#                     Remove packages/<name> (all its split packages) from the
+#                     database and upload it; prune then deletes its files.
 #   publish.sh prune  Delete package files the published database no longer
 #                     references (run after the Cloudflare purge).
 #
@@ -84,10 +87,77 @@ push() {
   group_start "Updating ${DB_ARCHIVE}"
   as_builder repo-add --sign --key "$GPGKEY" --verify --remove --prevent-downgrade \
     "$DB_ARCHIVE" "${pkgs[@]}"
+  finalize_db
+  group_end
 
-  # B2 has no symlinks: replace repo-add's links with real copies so
-  # pacman's aurstrich.db / aurstrich.files requests resolve to actual objects.
-  local base
+  # --- Stage 1: package binaries -----------------------------------------------------
+  group_start "Uploading packages"
+  local pkg_list="${WORK_TMP}/packages.list"
+  for file in "${pkgs[@]}"; do
+    printf '%s\n%s.sig\n' "$file" "$file"
+  done >"$pkg_list"
+  # --immutable: never overwrite a published package with different bytes.
+  rclone copy "${RCLONE_FLAGS[@]}" --immutable --files-from-raw "$pkg_list" \
+    "$OUT_DIR" "$REMOTE"
+  ok "uploaded ${#pkgs[@]} package(s)"
+  group_end
+
+  # --- Stage 2: database -----------------------------------------------------------------
+  upload_db
+}
+
+# Remove every package built from packages/<name> (matched on %BASE%, so split
+# packages go too) from the database and publish it. The package files stay
+# until `publish.sh prune`, which must run after the Cloudflare purge.
+# Sets the step output "changed" to true/false.
+remove() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || die "usage: $(basename "$0") remove <name>"
+  require_cmd repo-remove gpg
+  require_env GPGKEY
+  [[ -s "${OUT_DIR}/${DB_ARCHIVE}" ]] || die "no database in ${OUT_DIR}; run 'publish.sh pull' first"
+
+  cd "$OUT_DIR"
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown -R "${BUILD_USER:-builder}:${BUILD_USER:-builder}" "$OUT_DIR"
+  fi
+
+  local entries="${WORK_TMP}/entries.tsv" pkgnames=()
+  db_entries "$DB_ARCHIVE" >"$entries"
+  mapfile -t pkgnames < <(awk -F'\t' -v b="$name" '$1 == b { print $2 }' "$entries")
+  if [[ "${#pkgnames[@]}" -eq 0 ]]; then
+    warn "${name} is not in the ${REPO_NAME} database; nothing to remove"
+    set_output changed false
+    return 0
+  fi
+
+  # Warn (don't block) when other packages in the repo still depend on it.
+  local dependents
+  dependents="$(awk -F'\t' -v b="$name" -v names=" ${pkgnames[*]} " '
+    $1 != b { n = split($3, deps, " "); for (i = 1; i <= n; i++) if (index(names, " " deps[i] " ")) print $2 }
+  ' "$entries" | sort -u | paste -sd ' ')"
+  [[ -z "$dependents" ]] || warn "still depended on by: ${dependents}"
+
+  # Remember exactly which files this orphans, so prune can delete them even
+  # when the database ends up empty (where it otherwise refuses to run).
+  local before="${WORK_TMP}/before.list"
+  db_filenames "$DB_ARCHIVE" | sort -u >"$before"
+
+  group_start "Removing ${pkgnames[*]} from ${DB_ARCHIVE}"
+  as_builder repo-remove --sign --key "$GPGKEY" "$DB_ARCHIVE" "${pkgnames[@]}"
+  comm -23 "$before" <(db_filenames "$DB_ARCHIVE" | sort -u) >"${OUT_DIR}/.removed"
+  finalize_db
+  group_end
+
+  upload_db
+  set_output changed true
+}
+
+# B2 has no symlinks: replace repo-add/repo-remove's links with real copies so
+# pacman's aurstrich.db / aurstrich.files requests resolve to actual objects,
+# then check every object exists and the signatures verify. Run in $OUT_DIR.
+finalize_db() {
+  local base file
   for base in "${REPO_NAME}.db" "${REPO_NAME}.files"; do
     cp --remove-destination "${base}.tar.gz" "$base"
     cp --remove-destination "${base}.tar.gz.sig" "${base}.sig"
@@ -101,22 +171,11 @@ push() {
       || die "signature verification failed for $base"
   done
   ok "database updated and verified"
-  group_end
+}
 
-  # --- Stage 1: package binaries -----------------------------------------------------
-  group_start "Uploading packages"
-  local pkg_list="${WORK_TMP}/packages.list" db_list="${WORK_TMP}/db.list"
-  for file in "${pkgs[@]}"; do
-    printf '%s\n%s.sig\n' "$file" "$file"
-  done >"$pkg_list"
-  # --immutable: never overwrite a published package with different bytes.
-  rclone copy "${RCLONE_FLAGS[@]}" --immutable --files-from-raw "$pkg_list" \
-    "$OUT_DIR" "$REMOTE"
-  ok "uploaded ${#pkgs[@]} package(s)"
-  group_end
-
-  # --- Stage 2: database -----------------------------------------------------------------
+upload_db() {
   group_start "Uploading database"
+  local db_list="${WORK_TMP}/db.list"
   printf '%s\n' "${DB_OBJECTS[@]}" >"$db_list"
   rclone copy "${RCLONE_FLAGS[@]}" --ignore-times --files-from-raw "$db_list" \
     "$OUT_DIR" "$REMOTE"
@@ -126,6 +185,21 @@ push() {
   fi
   ok "database published"
   group_end
+}
+
+# Print "base<TAB>name<TAB>space-separated depend names" for each package in a
+# repo database. Version constraints are stripped from depends.
+db_entries() {
+  { bsdtar -xOf "$1" '*/desc' 2>/dev/null || true; } | awk '
+    function flush() { if (name != "") print (base != "" ? base : name) "\t" name "\t" deps }
+    /^%FILENAME%$/ { flush(); name = ""; base = ""; deps = ""; section = ""; next }
+    /^%[A-Z0-9]+%$/ { section = $0; next }
+    /^$/ { section = ""; next }
+    section == "%NAME%" { name = $0 }
+    section == "%BASE%" { base = $0 }
+    section == "%DEPENDS%" { sub(/[<>=].*/, ""); deps = deps (deps == "" ? "" : " ") $0 }
+    END { flush() }
+  '
 }
 
 # Remove package files from the bucket that the published database no longer
@@ -144,15 +218,20 @@ prune() {
     printf '%s\n%s.sig\n' "$file" "$file"
   done | sort -u >"$keep"
 
-  if [[ ! -s "$keep" ]]; then
+  if [[ -s "$keep" ]]; then
+    rclone lsf "${RCLONE_FLAGS[@]}" --files-only --max-depth 1 \
+      --include '*.pkg.tar.*' "$REMOTE" | sort -u >"$remote_files"
+    comm -23 "$remote_files" "$keep" >"$stale"
+  elif [[ -s "${OUT_DIR}/.removed" ]]; then
+    # The last package was just removed: delete exactly its files.
+    while IFS= read -r file; do
+      printf '%s\n%s.sig\n' "$file" "$file"
+    done <"${OUT_DIR}/.removed" >"$stale"
+  else
     warn "database lists no packages; refusing to prune"
     group_end
     return 0
   fi
-
-  rclone lsf "${RCLONE_FLAGS[@]}" --files-only --max-depth 1 \
-    --include '*.pkg.tar.*' "$REMOTE" | sort -u >"$remote_files"
-  comm -23 "$remote_files" "$keep" >"$stale"
 
   if [[ -s "$stale" ]]; then
     log "removing $(wc -l <"$stale") stale file(s):"
@@ -167,6 +246,7 @@ prune() {
 case "${1:-}" in
   pull) pull ;;
   push) push ;;
+  remove) shift; remove "$@" ;;
   prune) prune ;;
-  *) die "usage: $(basename "$0") pull|push|prune" ;;
+  *) die "usage: $(basename "$0") pull|push|remove <name>|prune" ;;
 esac

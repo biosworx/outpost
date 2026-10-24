@@ -104,7 +104,7 @@ remote_path() {
 # Run a command as the unprivileged build user when we are root.
 as_builder() {
   if [[ "$(id -u)" -eq 0 ]]; then
-    sudo -u "${BUILD_USER:-builder}" -H --preserve-env=GNUPGHOME,GPGKEY,PACKAGER,PKGDEST,SRCDEST,BUILDDIR -- "$@"
+    sudo -u "${BUILD_USER:-builder}" -H --preserve-env=GNUPGHOME,GPGKEY,PACKAGER,PKGDEST,PKGEXT,SRCDEST,BUILDDIR -- "$@"
   else
     "$@"
   fi
@@ -114,6 +114,8 @@ as_builder() {
 db_filenames() {
   local db="$1"
   [[ -s "$db" ]] || return 0
-  bsdtar -xOf "$db" '*/desc' 2>/dev/null \
+  # An empty database has no desc entries and bsdtar exits non-zero; that is
+  # "no packages", not an error (and must not trip pipefail in callers).
+  { bsdtar -xOf "$db" '*/desc' 2>/dev/null || true; } \
     | awk '/^%FILENAME%$/ { getline; print }'
 }

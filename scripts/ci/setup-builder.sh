@@ -40,6 +40,9 @@ MAKEFLAGS="-j$(nproc)"
 PACKAGER="${PACKAGER:-outpost CI <ci@${REPO_DOMAIN#https://}>}"
 # Do not split out -debug packages into the repo.
 OPTIONS=("\${OPTIONS[@]/#debug/!debug}")
+# Maximum zstd compression: ~55% smaller than the default for legcord; slower
+# to build, decompression is unaffected.
+COMPRESSZST=(zstd -c -T0 --ultra -22 -)
 EOF
 group_end
 
