@@ -21,15 +21,13 @@ permissions:
 jobs:
   check:
     name: Check upstream versions
-    runs-on: ubuntu-latest
-    container:
-      image: archlinux:base-devel
+    # Lightweight: gh, jq and git are preinstalled; vercmp comes from
+    # scripts/lib/vercmp.sh since slim has no pacman (and no job containers).
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     outputs:
       updates: ${{ steps.check.outputs.updates }}
     steps:
-      - name: Install tooling
-        run: pacman -Syu --noconfirm --needed git github-cli jq
-
       - name: Check out repository
         uses: actions/checkout@v7
 

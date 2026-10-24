@@ -5,7 +5,7 @@
 # A package opts in with packages/<name>/update.conf (key=value, not sourced):
 #
 #   source=github-release   latest non-prerelease GitHub release
-#   source=github-tag       highest tag (by vercmp) among recent tags
+#   source=github-tag       highest tag (by pacman vercmp) among recent tags
 #   repo=OWNER/NAME         GitHub repository
 #   tag_prefix=v            optional; stripped from the tag to get pkgver
 #
@@ -20,8 +20,10 @@
 set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(dirname "$0")/../lib/common.sh"
+# shellcheck source=../lib/vercmp.sh
+source "$(dirname "$0")/../lib/vercmp.sh"
 
-require_cmd gh jq vercmp
+require_cmd gh jq
 
 # Read one key from an update.conf without executing it.
 conf_get() {
@@ -105,14 +107,14 @@ for name in "${names[@]}"; do
     # Upstream tags are untrusted input that ends up in a shell; accept only
     # plain version strings.
     [[ "$candidate" =~ ^[0-9][A-Za-z0-9._+]*$ ]] || continue
-    if [[ -z "$latest" || "$(vercmp "$candidate" "$latest")" -gt 0 ]]; then
+    if [[ -z "$latest" || "$(pkg_vercmp "$candidate" "$latest")" -gt 0 ]]; then
       latest="$candidate"
     fi
   done <<<"$tags"
 
   if [[ -z "$latest" ]]; then
     warn "${name}: no usable version among upstream tags; skipping"
-  elif [[ "$(vercmp "$latest" "$current")" -le 0 ]]; then
+  elif [[ "$(pkg_vercmp "$latest" "$current")" -le 0 ]]; then
     log "${name}: up to date (${current})"
   elif pr_exists "update/${name}-${latest}"; then
     log "${name}: ${latest} available, PR already exists"

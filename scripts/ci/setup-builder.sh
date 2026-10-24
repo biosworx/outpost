@@ -47,9 +47,13 @@ EOF
 group_end
 
 group_start "Registering [${REPO_NAME}] repository"
+db_url="${REPO_URL}/${REPO_NAME}.db"
+headers="$(curl -sSI --max-time 20 "$db_url" 2>&1 || true)"
+status="$(awk 'toupper($1) ~ /^HTTP\// { code = $2 } END { print code }' <<<"$headers")"
+
 if grep -q "^\[${REPO_NAME}\]" /etc/pacman.conf; then
   log "[${REPO_NAME}] already present in pacman.conf"
-elif curl -fsSI --max-time 20 "${REPO_URL}/${REPO_NAME}.db" >/dev/null 2>&1; then
+elif [[ "$status" == "200" ]]; then
   # Trust the committed public key so [REPO_NAME] packages verify even in
   # jobs that never import the private signing key (e.g. update test builds).
   pubkey="${REPO_ROOT}/keys/${REPO_NAME}.asc"
@@ -71,7 +75,15 @@ Server = ${REPO_URL}
 EOF
   pacman -Sy --noconfirm
   ok "added [${REPO_NAME}] -> ${REPO_URL}"
+elif [[ "$status" == "404" ]]; then
+  warn "${db_url} does not exist yet; skipping (first publish?)"
 else
-  warn "${REPO_URL}/${REPO_NAME}.db not reachable yet; skipping (first publish?)"
+  # Anything else means the repo exists but this runner was refused, e.g. a
+  # Cloudflare bot challenge (cf-mitigated: challenge). Builds still run, but
+  # packages depending on other [REPO_NAME] packages will fail to resolve.
+  mitigated="$(awk -F': *' 'tolower($1) == "cf-mitigated" { sub(/\r$/, "", $2); print $2 }' <<<"$headers")"
+  msg="${db_url} returned HTTP ${status:-none}${mitigated:+ (cf-mitigated: ${mitigated})}; [${REPO_NAME}] is unavailable as a dependency source in this job"
+  warn "$msg"
+  if in_ci; then printf '::warning title=%s unreachable::%s\n' "$REPO_NAME" "$msg"; fi
 fi
 group_end
