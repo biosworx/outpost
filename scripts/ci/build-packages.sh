@@ -98,10 +98,24 @@ for name in "${pkgs[@]}"; do
     mapfile -t new_files < <(
       find "$PKGDEST" -maxdepth 1 -name '*.pkg.tar.zst' | sort | comm -13 "$before" -
     )
-    if [[ "${#new_files[@]}" -eq 0 ]]; then
+    # VCS packages skip the pre-build check, so an upstream with no new
+    # commits rebuilds a version that is already published. Drop those files.
+    fresh=()
+    for f in "${new_files[@]}"; do
+      if is_published "$(basename "$f")"; then
+        rm -f "$f" "${f}.sig"
+      else
+        fresh+=("$f")
+      fi
+    done
+    if [[ "${#new_files[@]}" -gt 0 && "${#fresh[@]}" -eq 0 ]]; then
+      warn "${name}: version already published (no upstream changes)"
+      skipped+=("$name")
+    elif [[ "${#new_files[@]}" -eq 0 ]]; then
       warn "${name}: makepkg succeeded but produced no packages"
       failed+=("$name")
     else
+      new_files=("${fresh[@]}")
       for f in "${new_files[@]}"; do
         [[ -f "${f}.sig" ]] || die "${name}: missing signature for $(basename "$f")"
         printf '%s\n' "$f" >>"$built_list"
