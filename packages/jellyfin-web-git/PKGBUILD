@@ -1,0 +1,45 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
+#
+# Built from upstream's master branch, following Arch's [extra] `jellyfin-web`
+# package. Same install path, so it swaps in for it alongside
+# jellyfin-server-git.
+
+pkgname=jellyfin-web-git
+_pkgname=jellyfin-web
+pkgver=13.0.0.r0.g0000000
+pkgrel=1
+pkgdesc="Web client for Jellyfin (development version)"
+arch=('any')
+url="https://jellyfin.org"
+_url="https://github.com/jellyfin/jellyfin-web"
+license=('GPL-2.0-or-later')
+makedepends=('git' 'nodejs' 'npm')
+provides=('jellyfin-web')
+conflicts=('jellyfin-web')
+source=("${_pkgname}::git+${_url}.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "${_pkgname}"
+  # Master carries the next release's version in package.json.
+  printf '%s.r%s.g%s' \
+    "$(sed -n 's/^  "version": "\(.*\)",$/\1/p' package.json | tr - _)" \
+    "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd "${_pkgname}"
+  npm ci --no-audit --no-fund --no-update-notifier
+}
+
+build() {
+  cd "${_pkgname}"
+  npm run build:production
+}
+
+package() {
+  cd "${_pkgname}"
+  install -dm755 "${pkgdir}/usr/share/jellyfin/web"
+  cp -r --no-preserve=ownership dist/* "${pkgdir}/usr/share/jellyfin/web"
+}
