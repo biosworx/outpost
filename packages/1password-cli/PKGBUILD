@@ -1,0 +1,24 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
+#
+# Repackages upstream's release zip, following the AUR `1password-cli`
+# package.
+
+pkgname=1password-cli
+pkgver=2.40.0
+pkgrel=1
+pkgdesc="1Password command line tool"
+arch=('x86_64')
+url="https://developer.1password.com/docs/cli/"
+license=('LicenseRef-1Password-Proprietary')
+options=('!strip' '!debug')
+install="${pkgname}.install"
+# The zip carries op.sig (key 3FEF9748469ADBE15DA7CA80AC2D62742012EA22). CI
+# cannot import that key, so it is checked by hand when bumping and the
+# checksum pins the verified zip.
+source=("https://cache.agilebits.com/dist/1P/op2/pkg/v${pkgver}/op_linux_amd64_v${pkgver}.zip")
+sha256sums=('74277219e8da60958c00f9aee9d2023225e98fdda8bfd2156a5d9e85e0edaab3')
+
+package() {
+  install -Dm755 op "${pkgdir}/usr/bin/op"
+}

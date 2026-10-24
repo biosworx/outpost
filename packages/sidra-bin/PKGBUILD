@@ -1,0 +1,66 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
+#
+# Repackages upstream's release AppImage, following the AUR `sidra-bin`
+# package.
+
+pkgname=sidra-bin
+_pkgname=sidra
+pkgver=1.2.1
+pkgrel=1
+pkgdesc="Elegant Apple Music desktop client for Linux (upstream binary)"
+arch=('x86_64')
+url="https://github.com/wimpysworld/sidra"
+license=('BlueOak-1.0.0')
+depends=('alsa-lib' 'at-spi2-core' 'dbus' 'glib2' 'gtk3' 'hicolor-icon-theme'
+         'libdrm' 'libnotify' 'libsecret' 'libx11' 'libxcomposite'
+         'libxdamage' 'libxext' 'libxfixes' 'libxrandr' 'libxtst' 'mesa'
+         'nspr' 'nss')
+optdepends=(
+  'libappindicator-gtk3: tray icon'
+  'playerctl: control playback from the command line (MPRIS)'
+  'xdg-utils: open links in the default browser'
+)
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}")
+options=('!strip' '!debug')
+# Release tags have no v prefix; the asset name has no version.
+source=("${pkgname}-${pkgver}.AppImage::${url}/releases/download/${pkgver}/Sidra-linux-x86_64.AppImage")
+noextract=("${pkgname}-${pkgver}.AppImage")
+sha256sums=('8e2a7cee70d3571b9d21384656c6776e7b99537d983cc7e312e834cb8f26280d')
+
+prepare() {
+  # Unpacks to squashfs-root/ without FUSE.
+  chmod +x "${pkgname}-${pkgver}.AppImage"
+  "./${pkgname}-${pkgver}.AppImage" --appimage-extract >/dev/null
+}
+
+package() {
+  cd squashfs-root
+
+  install -dm755 "${pkgdir}/opt/${_pkgname}"
+  cp -a --no-preserve=ownership . "${pkgdir}/opt/${_pkgname}/"
+  rm -rf "${pkgdir}/opt/${_pkgname}"/{AppRun,.DirIcon,"${_pkgname}.desktop"}
+  chmod -R u=rwX,go=rX "${pkgdir}/opt/${_pkgname}"
+  # Electron's sandbox helper must be setuid root.
+  [[ ! -f "${pkgdir}/opt/${_pkgname}/chrome-sandbox" ]] \
+    || chmod 4755 "${pkgdir}/opt/${_pkgname}/chrome-sandbox"
+
+  install -dm755 "${pkgdir}/usr/bin"
+  ln -s "/opt/${_pkgname}/${_pkgname}" "${pkgdir}/usr/bin/${_pkgname}"
+
+  # electron-builder puts the desktop entry at the AppImage root (or under
+  # usr/share/applications) and the icons under usr/share/icons.
+  local desktop="usr/share/applications/${_pkgname}.desktop"
+  [[ -f "${desktop}" ]] || desktop="${_pkgname}.desktop"
+  install -Dm644 "${desktop}" "${pkgdir}/usr/share/applications/${_pkgname}.desktop"
+  sed -i -e "s|^Exec=.*|Exec=/usr/bin/${_pkgname} %U|" -e "s|^Icon=.*|Icon=${_pkgname}|" \
+    "${pkgdir}/usr/share/applications/${_pkgname}.desktop"
+  if [[ -d usr/share/icons ]]; then
+    install -dm755 "${pkgdir}/usr/share"
+    cp -r --no-preserve=ownership,mode usr/share/icons "${pkgdir}/usr/share/"
+    chmod -R u=rwX,go=rX "${pkgdir}/usr/share/icons"
+  fi
+
+  # BlueOak-1.0.0 is in /usr/share/licenses/spdx.
+}
