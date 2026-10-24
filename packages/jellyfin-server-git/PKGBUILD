@@ -71,7 +71,7 @@ build() {
 
 package() {
   cd "${_pkgname}"
-  install -dm755 "${pkgdir}/usr/bin"
+  install -dm755 "${pkgdir}/usr/lib" "${pkgdir}/usr/bin"
   cp -r --no-preserve=ownership builddir "${pkgdir}/usr/lib/${_pkgname}"
   chmod 755 "${pkgdir}/usr/lib/${_pkgname}/jellyfin"
   ln -s "/usr/lib/${_pkgname}/jellyfin" "${pkgdir}/usr/bin/jellyfin"
