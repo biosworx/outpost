@@ -29,7 +29,12 @@ source "$(dirname "$0")/../lib/common.sh"
 require_cmd rclone bsdtar
 require_env B2_BUCKET
 
-RCLONE_FLAGS=(--stats-one-line --stats 30s --retries 5 --low-level-retries 10)
+# Uploads to B2 sometimes stall mid-transfer. rclone's default idle --timeout
+# (5m) then turned a 30-55 MiB package upload into 6-13 minutes; at 60s a
+# stalled transfer is retried after a minute instead. -v puts the transfer
+# stats and retries in the log.
+RCLONE_FLAGS=(-v --stats-one-line --stats 30s --retries 5 --low-level-retries 10
+  --timeout 60s --contimeout 15s)
 export RCLONE_CONFIG_B2_HARD_DELETE=true
 REMOTE="$(remote_path)"
 
