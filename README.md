@@ -74,6 +74,9 @@ sudo pacman -Sy
   daily. A new upstream version gets a test build and a PR: a ready PR if the
   build passed, a draft PR with the build log if it failed. Merge it to
   publish. Run *Check for package updates* by hand to check now.
+- **Signed sources:** for a PKGBUILD with `validpgpkeys`, commit each key as
+  `packages/<name>/keys/pgp/<fingerprint>.asc`; CI imports them before
+  building.
 - **Packages that depend on each other:** push the dependency first. Packages
   changed in the same push are built in no particular order.
 - **Removing a package:** run the *Remove package* workflow with its name

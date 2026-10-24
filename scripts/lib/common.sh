@@ -115,6 +115,18 @@ as_builder() {
   fi
 }
 
+# Import the upstream signing keys a package keeps in keys/pgp/*.asc (the
+# layout of Arch's packaging repos) into the build user's keyring, so makepkg
+# can verify sources listed in validpgpkeys.
+import_source_keys() {
+  local dir="$1" keys=()
+  shopt -s nullglob
+  keys=("${dir}"/keys/pgp/*.asc)
+  shopt -u nullglob
+  [[ "${#keys[@]}" -gt 0 ]] || return 0
+  as_builder gpg --batch --quiet --import "${keys[@]}"
+}
+
 # Print every package filename referenced by a repo database (one per line).
 db_filenames() {
   local db="$1"

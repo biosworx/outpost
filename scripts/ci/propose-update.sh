@@ -62,7 +62,7 @@ group_end
 if [[ "$result" == "passed" ]]; then
   group_start "Test-building ${name} ${version}"
   # The package is thrown away, so skip the (slow, maximum) compression.
-  if (cd "$dir" && PKGDEST="$work" PKGEXT=.pkg.tar as_builder makepkg --syncdeps --noconfirm --cleanbuild --clean) \
+  if import_source_keys "$dir" && (cd "$dir" && PKGDEST="$work" PKGEXT=.pkg.tar as_builder makepkg --syncdeps --noconfirm --cleanbuild --clean) \
        >"${work}/build.log" 2>&1; then
     ok "test build passed"
   else
