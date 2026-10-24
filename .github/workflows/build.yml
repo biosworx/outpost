@@ -105,13 +105,21 @@ jobs:
           PACKAGES: ${{ needs.detect.outputs.package }}
         run: scripts/ci/build-packages.sh
 
+      # Artifacts reject ':' in file names, which packages with an epoch have
+      # (rockchip-mpp-1:1.1.0-1-...), so the files travel inside one tar.
+      - name: Bundle package
+        if: steps.build.outputs.built != ''
+        run: |
+          cd .repo/.pkgdest
+          tar -cf ../packages.tar -- *.pkg.tar.zst *.pkg.tar.zst.sig
+
       - name: Upload package
         if: steps.build.outputs.built != ''
         uses: actions/upload-artifact@v7
         with:
           name: pkg-${{ needs.detect.outputs.package }}
           # Signed packages (.pkg.tar.zst and .sig). Already zstd-compressed.
-          path: .repo/.pkgdest/*.pkg.tar.zst*
+          path: .repo/packages.tar
           include-hidden-files: true
           if-no-files-found: error
           compression-level: 0
@@ -182,13 +190,13 @@ jobs:
         continue-on-error: true
         with:
           pattern: pkg-*
-          merge-multiple: true
-          path: .repo/.pkgdest
+          path: .repo/.artifacts
 
       - name: Collect built packages
         id: collect
         run: |
-          mkdir -p "$OUT_DIR/.pkgdest"
+          mkdir -p "$OUT_DIR/.pkgdest" "$OUT_DIR/.artifacts"
+          find "$OUT_DIR/.artifacts" -name packages.tar -exec tar -xf {} -C "$OUT_DIR/.pkgdest" \;
           find "$OUT_DIR/.pkgdest" -maxdepth 1 -name '*.pkg.tar.zst' | sort >"$OUT_DIR/.built"
           sed 's|.*/||' "$OUT_DIR/.built"
           echo "count=$(wc -l <"$OUT_DIR/.built")" >>"$GITHUB_OUTPUT"
