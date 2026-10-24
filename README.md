@@ -5,6 +5,24 @@ My own AUR-like repo because user account registration is closed right now.
 PKGBUILDs in [`packages/`](packages/) are built and signed in CI, then
 published as the pacman repository **`[aurstrich]`**.
 
+## Why AURstrich?
+
+- **Prebuilt.** Packages arrive ready to install. No `makepkg`, no build
+  dependencies, no waiting on your own machine for a compile: `pacman -S` and
+  you're done.
+- **Extreme compression.** Every package is compressed with zstd at its
+  maximum level (`--ultra -22`), around 55% smaller than makepkg's default
+  for legcord. That costs CI build time, not yours: decompression is just as
+  fast, and downloads are smaller.
+- **Fast downloads from Cloudflare.** Packages are served through
+  Cloudflare's CDN and cached at the edge, so downloads come from a server
+  near you with plenty of bandwidth, rather than from a single origin.
+- **Signed and built clean.** Every package is built in a fresh Arch Linux
+  container in CI and signed, and pacman checks the signature before
+  installing.
+- **Kept up to date.** Packages with automatic updates are checked against
+  upstream daily.
+
 ## Using it
 
 Import and trust the signing key:
