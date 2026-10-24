@@ -1,0 +1,71 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
+#
+# Repackages upstream's Debian 13 .deb, laid out like Arch's [extra]
+# `jellyfin-server` so it swaps in for it (and for jellyfin-server-git)
+# without touching /var/lib/jellyfin. [extra] ships `jellyfin-server` but lags
+# upstream; [aurstrich] comes after [extra] in pacman.conf, so a package with
+# that name here would never be picked.
+
+pkgname=jellyfin-server-bin
+_pkgname=jellyfin
+pkgver=12.3
+pkgrel=1
+pkgdesc="Jellyfin server backend (upstream binary)"
+arch=('x86_64')
+url="https://jellyfin.org"
+license=('GPL-2.0-or-later')
+# The .deb is a self-contained .NET build, so no aspnet-runtime. .NET still
+# loads ICU and OpenSSL from the system (zlib is built in).
+depends=('glibc' 'libgcc' 'libstdc++' 'bash' 'fontconfig' 'icu' 'openssl'
+         'jellyfin-ffmpeg' 'jemalloc')
+optdepends=(
+  'jellyfin-web: to run web-app on the same machine'
+  'noto-fonts: for text titles in library folders'
+)
+provides=("jellyfin-server=${pkgver}")
+conflicts=('jellyfin-server')
+backup=('etc/jellyfin/logging.json' 'etc/jellyfin/jellyfin.env')
+options=('!strip' '!debug')
+# Versioned directory, so the file never changes under a pinned checksum.
+source=("${pkgname}-${pkgver}.deb::https://repo.jellyfin.org/files/server/debian/stable/v${pkgver}/amd64/jellyfin-server_${pkgver}+deb13_amd64.deb"
+        'sysusers.conf'
+        'tmpfiles.conf')
+noextract=("${pkgname}-${pkgver}.deb")
+sha256sums=('bfaaf487fceb91f912502473aa464564fa6d00f9ca6bc25c2bbc034193785fd8'
+            '53c80d0467e4d0104120d617fda5f4a9308daaee1328cdd2b59c7bddf0b3b1e3'
+            '67766e0cca84127ea8f648b1b2e781fdeaeda931ab452ce7045c5de620b88d8d')
+
+prepare() {
+  mkdir -p deb
+  bsdtar -xOf "${pkgname}-${pkgver}.deb" 'data.tar.*' | bsdtar -xf - -C deb
+
+  cd deb
+  # Arch keeps the env file in /etc/jellyfin and preloads the system jemalloc
+  # (https://github.com/jellyfin/jellyfin/issues/11588); the .deb's postinst,
+  # which pacman never runs, would otherwise symlink it into /usr/lib/jellyfin.
+  # The greps fail the build if upstream renames what is being replaced.
+  sed -i 's|^EnvironmentFile = /etc/default/jellyfin$|EnvironmentFile = /etc/jellyfin/jellyfin.env|' lib/systemd/system/jellyfin.service
+  sed -i 's|^LD_PRELOAD=.*|LD_PRELOAD=/usr/lib/libjemalloc.so.2|' etc/default/jellyfin
+  grep -qx 'EnvironmentFile = /etc/jellyfin/jellyfin.env' lib/systemd/system/jellyfin.service
+  grep -qx 'LD_PRELOAD=/usr/lib/libjemalloc.so.2' etc/default/jellyfin
+}
+
+package() {
+  cd deb
+  # Upstream installs to /usr/lib/jellyfin/bin; Arch's layout drops the bin/.
+  install -dm755 "${pkgdir}/usr/lib" "${pkgdir}/usr/bin"
+  cp -r --no-preserve=ownership usr/lib/jellyfin/bin "${pkgdir}/usr/lib/${_pkgname}"
+  chmod -R u=rwX,go=rX "${pkgdir}/usr/lib/${_pkgname}"
+  chmod 755 "${pkgdir}/usr/lib/${_pkgname}"/{jellyfin,createdump}
+  ln -s "/usr/lib/${_pkgname}/jellyfin" "${pkgdir}/usr/bin/jellyfin"
+
+  install -Dm644 lib/systemd/system/jellyfin.service -t "${pkgdir}/usr/lib/systemd/system/"
+  install -Dm644 "${srcdir}/sysusers.conf" "${pkgdir}/usr/lib/sysusers.d/${_pkgname}.conf"
+  install -Dm644 "${srcdir}/tmpfiles.conf" "${pkgdir}/usr/lib/tmpfiles.d/${_pkgname}.conf"
+  # 750, matching tmpfiles.conf. The .deb's /etc/systemd/system drop-in is all
+  # comments, and /etc/systemd/system belongs to the admin, so it is left out.
+  install -dm750 "${pkgdir}/etc/${_pkgname}"
+  install -Dm640 etc/default/jellyfin "${pkgdir}/etc/${_pkgname}/${_pkgname}.env"
+  install -Dm640 etc/jellyfin/logging.json -t "${pkgdir}/etc/${_pkgname}/"
+}
