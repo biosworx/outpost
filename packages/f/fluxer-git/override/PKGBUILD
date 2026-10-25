@@ -19,15 +19,15 @@ provides=('fluxer')
 conflicts=('fluxer')
 _electronver=39
 _nodever=20
-# AUR's PKGBUILD predates upstream's linux-audio-capture addon, which links
-# libpipewire; its build stops without the pkg-config file. The webauthn
-# addon links libfido2 the same way.
+# AUR's PKGBUILD predates two upstream changes: the linux-audio-capture
+# addon, which links libpipewire (the webauthn addon links libfido2 the same
+# way), and the app's WebAssembly modules, built for wasm32-unknown-unknown
+# (rust-wasm).
 depends=(
   'libpipewire'
   'libfido2'
 )
 makedepends=(
-  'libpipewire'
   'git'
   "nodejs>=$_nodever"
   "electron$_electronver"
@@ -35,8 +35,10 @@ makedepends=(
   'pnpm'
   'python'
   'rust'
+  'rust-wasm'
   'clang'
   'libfido2'
+  'libpipewire'
 )
 source=(
   "$_pkgname::git+https://github.com/fluxerapp/fluxer.git#branch=main"
@@ -63,6 +65,10 @@ build() {
     )
     cd "$_pkgname/fluxer_desktop"
     export NODE_ENV=production
+    # The wasm build cargo-installs its pinned wasm-bindgen-cli, then runs it
+    # from PATH.
+    export CARGO_HOME="$srcdir/cargo-home"
+    export PATH="$CARGO_HOME/bin:$PATH"
     pnpm build
     pnpm exec electron-builder --config electron-builder.config.cjs ${electron_builder_options[@]}
 }
