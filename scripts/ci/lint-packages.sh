@@ -10,6 +10,7 @@
 #
 # Usage: lint-packages.sh [name...]
 #
+# Packages are checked in parallel, LINT_JOBS at a time (default: nproc).
 # Runs makepkg as the build user when root (useradd builder first).
 
 set -euo pipefail
@@ -45,21 +46,38 @@ for file in "$PACKAGES_DIR"/*/{PKGBUILD,aur.conf} "$PACKAGES_DIR"/*/*/{PKGBUILD,
   fi
 done
 
-for name in "${names[@]}"; do
-  group_start "$name"
-  dir="${work}/${name}"
+# Check one package; its output is collected and printed by the caller.
+lint_one() {
+  local name="$1" dir="${work}/${1}" rc=0
   # aur_validate dies on bad values; keep going with the other packages.
   if ! (resolve_package "$name" "$dir"; describe_resolution "$name" >"${dir}.desc"); then
     warn "${name}: could not resolve"
-    status=1
-    group_end
-    continue
+    return 1
   fi
   log "${name}: $(cat "${dir}.desc")"
-  [[ "$(id -u)" -ne 0 ]] || chown -R "${BUILD_USER:-builder}:" "$work"
-  (cd "$dir" && as_builder makepkg --printsrcinfo >/dev/null) || { warn "${name}: PKGBUILD does not parse"; status=1; }
-  namcap "${dir}/PKGBUILD" || status=1
+  [[ "$(id -u)" -ne 0 ]] || chown -R "${BUILD_USER:-builder}:" "$dir"
+  (cd "$dir" && as_builder makepkg --printsrcinfo >/dev/null) || { warn "${name}: PKGBUILD does not parse"; rc=1; }
+  namcap "${dir}/PKGBUILD" || rc=1
+  return "$rc"
+}
+
+# mktemp -d is private to its owner; the build user needs to reach into it.
+[[ "$(id -u)" -ne 0 ]] || chown "${BUILD_USER:-builder}:" "$work"
+
+# Packages are independent, so check up to LINT_JOBS at once; each one's
+# output is buffered and printed in order so log groups don't interleave.
+max_jobs="${LINT_JOBS:-$(nproc)}"
+for name in "${names[@]}"; do
+  while (( $(jobs -rp | wc -l) >= max_jobs )); do wait -n; done
+  lint_one "$name" >"${work}/${name}.log" 2>&1 || touch "${work}/${name}.failed" &
+done
+wait
+
+for name in "${names[@]}"; do
+  group_start "$name"
+  cat "${work}/${name}.log"
   group_end
+  [[ ! -e "${work}/${name}.failed" ]] || status=1
 done
 
 exit "$status"
