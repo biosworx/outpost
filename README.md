@@ -112,8 +112,12 @@ sudo pacman -Sy
 - **Signed sources:** for a PKGBUILD with `validpgpkeys`, commit each key as
   `packages/<l>/<name>/keys/pgp/<fingerprint>.asc` (keys AUR ships in its own
   `keys/pgp/` work too); CI imports them before building.
-- **Packages that depend on each other:** push the dependency first. Packages
-  changed in the same push are built in no particular order.
+- **Packages that depend on each other** can change in the same push (or
+  build together with `all`). A package whose `depends`, `makedepends` or
+  `checkdepends` name another package being built waits for that one's run
+  to succeed first; the rest build in parallel. If a dependency's run
+  fails, the runs waiting for it fail too: re-run the dependency, then
+  them.
 - **Removing a package:** run the *Remove package* workflow with its name
   (typed twice). It drops the package from the database, deletes its files
   from B2, closes pending update PRs and deletes `packages/<l>/<name>/`.

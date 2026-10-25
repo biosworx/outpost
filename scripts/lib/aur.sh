@@ -114,6 +114,44 @@ pkgbuild_version() {
   )
 }
 
+# Print what the package resolved into <dir> supplies and needs, one
+# "provides<TAB>name" or "needs<TAB>name" line each, versions stripped:
+#   provides  every pkgname of a split package and everything they provide
+#   needs     what makepkg --syncdeps installs: the global depends,
+#             makedepends and checkdepends (arch-specific ones included)
+# Uses .SRCINFO when RESOLVED_FROM is aur (AUR's files are never sourced
+# here), else sources the PKGBUILD in a subshell. Call after resolve_package.
+pkg_relations() {
+  local dir="$1"
+  if [[ "$RESOLVED_FROM" == "aur" ]]; then
+    awk '
+      { line = $0; sub(/^[[:space:]]+/, "", line) }
+      split(line, kv, " = ") < 2 { next }
+      { key = kv[1]; value = substr(line, length(key) + 4); sub(/[<>=].*/, "", value) }
+      key == "pkgname" { global = 0 }
+      key ~ /^(pkgname|provides(_.+)?)$/ { print "provides\t" value; next }
+      global && key ~ /^(depends|makedepends|checkdepends)(_.+)?$/ { print "needs\t" value }
+      BEGIN { global = 1 }
+    ' "${dir}/.SRCINFO"
+    return 0
+  fi
+  (
+    cd "$dir" || exit 1
+    set +eu
+    pkgname=() provides=() depends=() makedepends=() checkdepends=()
+    # shellcheck disable=SC1091
+    source ./PKGBUILD >/dev/null 2>&1
+    local kind var v
+    for var in pkgname provides "provides_${REPO_ARCH}" \
+               depends makedepends checkdepends \
+               "depends_${REPO_ARCH}" "makedepends_${REPO_ARCH}" "checkdepends_${REPO_ARCH}"; do
+      [[ "$var" == p* ]] && kind=provides || kind=needs
+      var="${var}[@]"
+      for v in "${!var}"; do printf '%s\t%s\n' "$kind" "${v%%[<>=]*}"; done
+    done
+  )
+}
+
 # Decide which PKGBUILD a package builds from and copy it into <dest>.
 #
 # Usage: resolve_package <name> <dest> [aur-checkout]

@@ -16,6 +16,10 @@ on:
         description: "Delete package files no longer referenced by the database"
         type: boolean
         default: true
+      wait_for:
+        description: "Run IDs to wait for before building (set by dispatch-builds.sh for packages whose dependencies build in the same push)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -23,13 +27,15 @@ permissions:
   packages: read # pull the builder image
 
 # One package per run. When a push (or a manual run) selects several, this
-# run only starts one run per package and builds nothing itself. Builds only
+# run only starts one run per package and builds nothing itself; a package
+# whose dependencies are among them waits for their runs first. Builds only
 # read the database; the publish job is the single writer.
 jobs:
   detect:
     name: Detect changed packages
     runs-on: ubuntu-slim
-    timeout-minutes: 10
+    # Waiting for dependency runs can take as long as their builds.
+    timeout-minutes: ${{ github.event.inputs.wait_for && 360 || 10 }}
     permissions:
       contents: read
       actions: write # dispatch-builds.sh starts the per-package runs
@@ -40,6 +46,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Wait for dependency runs
+        if: github.event.inputs.wait_for != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_IDS: ${{ github.event.inputs.wait_for }}
+        run: scripts/ci/wait-for-runs.sh
 
       - name: Detect changed packages
         id: detect
