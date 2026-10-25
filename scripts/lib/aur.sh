@@ -138,6 +138,8 @@ pkg_relations() {
   (
     cd "$dir" || exit 1
     set +eu
+    # Read through ${!var} below.
+    # shellcheck disable=SC2034
     pkgname=() provides=() depends=() makedepends=() checkdepends=()
     # shellcheck disable=SC1091
     source ./PKGBUILD >/dev/null 2>&1
