@@ -17,12 +17,12 @@ license=('AGPL-3.0-or-later')
 options=('!lto')
 provides=('fluxer')
 conflicts=('fluxer')
-_electronver=39
 _nodever=20
-# AUR's PKGBUILD predates two upstream changes: the linux-audio-capture
+# AUR's PKGBUILD predates three upstream changes: the linux-audio-capture
 # addon, which links libpipewire (the webauthn addon links libfido2 the same
-# way), and the app's WebAssembly modules, built for wasm32-unknown-unknown
-# (rust-wasm).
+# way); the app's WebAssembly modules, built for wasm32-unknown-unknown
+# (rust-wasm); and Linux packaging with upstream's patched Electron instead
+# of Arch's (see prepare()).
 depends=(
   'libpipewire'
   'libfido2'
@@ -30,7 +30,6 @@ depends=(
 makedepends=(
   'git'
   "nodejs>=$_nodever"
-  "electron$_electronver"
   'npm'
   'pnpm'
   'python'
@@ -54,6 +53,29 @@ pkgver() {
 
 prepare() {
     cd "$_pkgname/fluxer_desktop"
+
+    # Upstream packages Linux only with its patched Electron (a Chromium
+    # VA-API fix), published as a GitHub release that electron/runtime.json
+    # pins by sha256. The pin follows upstream's main branch, so it is read
+    # here rather than listed in source=. electron-builder then checks the
+    # archive, its manifest and the patch itself.
+    local _arch _tag _version _sha256 _name _url
+    case "$CARCH" in
+      x86_64) _arch=x64 ;;
+      aarch64) _arch=arm64 ;;
+    esac
+    read -r _tag _version _sha256 < <(python -c '
+import json, sys
+runtime = json.load(open("electron/runtime.json"))
+print(runtime["releaseTag"], runtime["electronVersion"], runtime["linux"][sys.argv[1]]["archiveSha256"])
+' "$_arch")
+    _name="electron-v${_version}-linux-${_arch}"
+    _url="https://github.com/fluxerapp/fluxer/releases/download/${_tag}"
+    mkdir -p "$srcdir/electron-dist"
+    curl -fsSL --retry 3 -o "$srcdir/electron-dist/${_name}.zip" "${_url}/${_name}.zip"
+    curl -fsSL --retry 3 -o "$srcdir/electron-dist/${_name}.fluxer.json" "${_url}/${_name}.fluxer.json"
+    echo "${_sha256}  $srcdir/electron-dist/${_name}.zip" | sha256sum -c -
+
     pnpm install --frozen-lockfile
 }
 
@@ -61,10 +83,10 @@ build() {
     local electron_builder_options=(
       --linux
       --dir
-      -c.electronDist=/usr/lib/electron$_electronver
     )
     cd "$_pkgname/fluxer_desktop"
     export NODE_ENV=production
+    export FLUXER_ELECTRON_DIST="$srcdir/electron-dist"
     # The wasm build cargo-installs its pinned wasm-bindgen-cli, then runs it
     # from PATH.
     export CARGO_HOME="$srcdir/cargo-home"
