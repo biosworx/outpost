@@ -36,6 +36,13 @@ require_env B2_BUCKET
 RCLONE_FLAGS=(-v --stats-one-line --stats 30s --retries 5 --low-level-retries 10
   --timeout 60s --contimeout 15s)
 export RCLONE_CONFIG_B2_HARD_DELETE=true
+# Below the default 200M cutoff a file goes up as one single-connection PUT:
+# some runners throttle that connection to ~40 KiB/s, and a failure restarts
+# the whole file. Multipart spreads a package over 8 connections and retries
+# only the failed part.
+export RCLONE_CONFIG_B2_UPLOAD_CUTOFF=32M
+export RCLONE_CONFIG_B2_CHUNK_SIZE=16M
+export RCLONE_CONFIG_B2_UPLOAD_CONCURRENCY=8
 REMOTE="$(remote_path)"
 
 WORK_TMP="$(mktemp -d)"
