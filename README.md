@@ -86,9 +86,12 @@ sudo pacman -Sy
 - **Builder image:** CI jobs run in `ghcr.io/<owner>/<repo>-builder`,
   `archlinux:base-devel` with CI's tooling preinstalled
   ([`container/Containerfile`](container/Containerfile)). *Build builder
-  image* rebuilds it weekly and whenever the Containerfile changes; jobs
-  still `pacman -Syu` on top. The name follows the repository, so after a
-  rename run that workflow once before anything else.
+  image* rebuilds it weekly and whenever the Containerfile changes; build
+  jobs still `pacman -Syu` on top. The name follows the repository, so
+  after a rename run that workflow once before anything else.
+- **Credentials:** only the publish and remove jobs hold B2 keys. Build
+  jobs run PKGBUILD code, so they read the database over plain HTTPS
+  (`scripts/ci/fetch-db.sh`) and hand packages over as artifacts.
 - **Republishing the same version needs a `pkgrel` bump.** CI skips versions
   already in the database.
 - **Automatic updates** run daily (or by hand: *Check for package updates*).

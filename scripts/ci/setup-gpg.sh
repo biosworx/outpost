@@ -3,12 +3,14 @@
 # Import the repository signing key for the build user and cache its
 # passphrase in gpg-agent so makepkg --sign and repo-add -s run unattended.
 #
-# Also adds the public key to the pacman keyring so [aurstrich] packages pulled
-# in by --syncdeps verify, and exports it to $OUT_DIR/<repo>.asc for upload.
+# Also exports the public key to $OUT_DIR/<repo>.asc for upload and, unless
+# SKIP_PACMAN=1, adds it to the pacman keyring so [aurstrich] packages
+# pulled in by --syncdeps verify.
 #
 # Env (required): GPG_PRIVATE_KEY  ASCII-armoured secret key
 #                 GPG_KEY_ID       key ID or fingerprint to sign with
 # Env (optional): GPG_PASSPHRASE   empty for an unprotected key
+#                 SKIP_PACMAN      1 for jobs that install no packages
 #
 # Must run as root (the builder user is created by setup-builder.sh).
 
@@ -80,13 +82,18 @@ printf 'outpost signing self-test\n' \
 ok "test signature succeeded"
 group_end
 
-group_start "Trusting key in pacman keyring"
-[[ -f /etc/pacman.d/gnupg/trustdb.gpg ]] || pacman-key --init
 mkdir -p "$OUT_DIR"
 pubkey="${OUT_DIR}/${REPO_NAME}.asc"
 as_builder gpg --batch --armor --export "$fingerprint" >"$pubkey"
-pacman-key --add "$pubkey"
-pacman-key --lsign-key "$fingerprint"
+
+if [[ "${SKIP_PACMAN:-0}" != "1" ]]; then
+  group_start "Trusting key in pacman keyring"
+  # Always init: the builder image's keyring has no local key to lsign with.
+  pacman-key --init
+  pacman-key --add "$pubkey"
+  pacman-key --lsign-key "$fingerprint"
+  group_end
+fi
 
 if [[ -f "${REPO_ROOT}/keys/${REPO_NAME}.asc" ]] \
   && ! grep -q 'PLACEHOLDER' "${REPO_ROOT}/keys/${REPO_NAME}.asc" \
@@ -94,11 +101,6 @@ if [[ -f "${REPO_ROOT}/keys/${REPO_NAME}.asc" ]] \
               <(printf '%s\n' "$fingerprint"); then
   warn "keys/${REPO_NAME}.asc does not match the CI signing key ($fingerprint)"
 fi
-
-if grep -q "^\[${REPO_NAME}\]" /etc/pacman.conf; then
-  pacman -Sy --noconfirm
-fi
-group_end
 
 set_env GNUPGHOME "$GNUPGHOME"
 set_env GPGKEY "$fingerprint"

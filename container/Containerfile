@@ -1,12 +1,14 @@
 # Base image for every CI job that needs pacman: archlinux:base-devel with the
 # tooling the workflows used to install at the start of each job. Rebuilt
-# weekly by .github/workflows/builder-image.yml; jobs still run pacman -Syu,
-# which then only fetches what changed since the image was built.
+# weekly by .github/workflows/builder-image.yml. Jobs that build still run
+# pacman -Syu, which then only fetches what changed since the image was
+# built; publishing and removing use it as is.
 FROM archlinux:base-devel
 
 # The keyring needs a master key to install anything. Its private half is
-# deleted again, as in the official image, so it is never published: jobs run
-# pacman-key --init to make their own before signing keys locally.
+# deleted again, as in the official image, so it is never published:
+# setup-builder.sh and setup-gpg.sh run pacman-key --init to make their own
+# before signing keys locally.
 RUN pacman-key --init \
  && pacman -Syu --noconfirm --needed git rclone jq github-cli pacman-contrib \
  && rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/* \

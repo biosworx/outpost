@@ -115,6 +115,18 @@ remote_path() {
   printf '%s/%s' "$(remote_base)" "$REPO_ARCH"
 }
 
+# URL CI reads the published repo from (no credentials). With the bucket
+# name available, straight from B2: the public domain sits behind Bot Fight
+# Mode, which challenges GitHub's runners. The bucket name is a secret, so
+# Actions masks it in logs.
+repo_read_url() {
+  if [[ -n "${B2_BUCKET:-}" ]]; then
+    printf '%s/file/%s/%s/%s' "$B2_DOWNLOAD_HOST" "$B2_BUCKET" "$REPO_PREFIX" "$REPO_ARCH"
+  else
+    printf '%s' "$REPO_URL"
+  fi
+}
+
 # Run a command as the unprivileged build user when we are root.
 as_builder() {
   if [[ "$(id -u)" -eq 0 ]]; then

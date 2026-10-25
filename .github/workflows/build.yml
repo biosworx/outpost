@@ -73,25 +73,25 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ github.token }}
       options: --privileged
+    outputs:
+      built: ${{ steps.build.outputs.built }}
 
+    # No B2 credentials here: this job runs PKGBUILD code. The bucket name
+    # only lets it read the repo straight from B2 (see repo_read_url).
     env:
       OUT_DIR: ${{ github.workspace }}/.repo
       B2_BUCKET: ${{ secrets.B2_BUCKET }}
-      RCLONE_CONFIG_B2_TYPE: b2
-      RCLONE_CONFIG_B2_ACCOUNT: ${{ secrets.B2_KEY_ID }}
-      RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_APP_KEY }}
 
     steps:
-      - name: Update system
-        run: |
-          pacman-key --init
-          pacman -Syu --noconfirm
-
       - name: Check out repository
         uses: actions/checkout@v7
 
+      # Registers [aurstrich] first, so the update below syncs it too.
       - name: Prepare build user
         run: scripts/ci/setup-builder.sh
+
+      - name: Update system
+        run: pacman -Syu --noconfirm
 
       - name: Import signing key
         env:
@@ -101,8 +101,8 @@ jobs:
         run: scripts/ci/setup-gpg.sh
 
       # Read-only: lets build-packages.sh skip versions already published.
-      - name: Pull repository database
-        run: scripts/ci/publish.sh pull
+      - name: Fetch repository database
+        run: scripts/ci/fetch-db.sh
 
       - name: Build ${{ needs.detect.outputs.package }}
         id: build
@@ -150,7 +150,8 @@ jobs:
   publish:
     name: Publish
     needs: [detect, build]
-    if: needs.detect.outputs.package != ''
+    # Nothing to publish when the version was already published.
+    if: needs.build.outputs.built != ''
     runs-on: ubuntu-latest
     timeout-minutes: 45
     container:
@@ -178,13 +179,11 @@ jobs:
       RCLONE_CONFIG_B2_TYPE: b2
       RCLONE_CONFIG_B2_ACCOUNT: ${{ secrets.B2_KEY_ID }}
       RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_APP_KEY }}
+      # Installs nothing: the image's tooling is enough, and every step here
+      # runs while holding the lock.
+      SKIP_PACMAN: "1"
 
     steps:
-      - name: Update system
-        run: |
-          pacman-key --init
-          pacman -Syu --noconfirm
-
       - name: Check out repository
         uses: actions/checkout@v7
 
@@ -200,8 +199,6 @@ jobs:
 
       - name: Download built packages
         uses: actions/download-artifact@v8
-        # Nothing to download when the version was already published.
-        continue-on-error: true
         with:
           pattern: pkg-*
           path: .repo/.artifacts

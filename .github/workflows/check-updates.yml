@@ -59,20 +59,21 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.check.outputs.updates) }}
     steps:
-      - name: Update system
-        run: pacman -Syu --noconfirm
-
       - name: Check out repository
         uses: actions/checkout@v7
 
       - name: Mark workspace as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      # Registers [aurstrich] first, so the update below syncs it too.
       - name: Prepare build user
         env:
           # Read [aurstrich] straight from B2 (Bot Fight Mode blocks runners).
           B2_BUCKET: ${{ secrets.B2_BUCKET }}
         run: scripts/ci/setup-builder.sh
+
+      - name: Update system
+        run: pacman -Syu --noconfirm
 
       - name: Bump, test-build and open PR
         id: propose

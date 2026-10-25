@@ -44,6 +44,9 @@ jobs:
       RCLONE_CONFIG_B2_TYPE: b2
       RCLONE_CONFIG_B2_ACCOUNT: ${{ secrets.B2_KEY_ID }}
       RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_APP_KEY }}
+      # Installs nothing: the image's tooling is enough, and every step here
+      # runs while holding the lock.
+      SKIP_PACMAN: "1"
 
     steps:
       - name: Check inputs
@@ -54,11 +57,6 @@ jobs:
           if [[ "$PACKAGE" != "$CONFIRM" ]]; then
             echo "::error::confirmation '$CONFIRM' does not match '$PACKAGE'"; exit 1
           fi
-
-      - name: Update system
-        run: |
-          pacman-key --init
-          pacman -Syu --noconfirm
 
       - name: Check out repository
         uses: actions/checkout@v7
