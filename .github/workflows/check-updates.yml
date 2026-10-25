@@ -17,6 +17,7 @@ concurrency:
 permissions:
   contents: write # push update/* branches
   pull-requests: write # open and close update PRs
+  packages: read # pull the builder image
 
 jobs:
   check:
@@ -46,16 +47,20 @@ jobs:
     if: needs.check.outputs.updates != '[]' && needs.check.outputs.updates != ''
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # archlinux:base-devel with the tooling preinstalled (container/Containerfile).
     container:
-      image: archlinux:base-devel
+      image: ghcr.io/${{ github.repository }}-builder:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
       options: --privileged
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.check.outputs.updates) }}
     steps:
-      - name: Install tooling
-        run: pacman -Syu --noconfirm --needed git github-cli jq pacman-contrib
+      - name: Update system
+        run: pacman -Syu --noconfirm
 
       - name: Check out repository
         uses: actions/checkout@v7

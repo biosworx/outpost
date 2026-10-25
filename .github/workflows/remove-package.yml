@@ -23,6 +23,7 @@ concurrency:
 permissions:
   contents: write # push the source deletion
   pull-requests: write # close pending update PRs
+  packages: read # pull the builder image
 
 jobs:
   remove:
@@ -30,7 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: archlinux:base-devel
+      image: ghcr.io/${{ github.repository }}-builder:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
 
     env:
       PACKAGE: ${{ inputs.package }}
@@ -51,10 +55,10 @@ jobs:
             echo "::error::confirmation '$CONFIRM' does not match '$PACKAGE'"; exit 1
           fi
 
-      - name: Install tooling
+      - name: Update system
         run: |
           pacman-key --init
-          pacman -Syu --noconfirm --needed git rclone jq github-cli
+          pacman -Syu --noconfirm
 
       - name: Check out repository
         uses: actions/checkout@v7

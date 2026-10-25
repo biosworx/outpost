@@ -1,0 +1,58 @@
+name: Build builder image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "container/**"
+      - ".github/workflows/builder-image.yml"
+  schedule:
+    - cron: "41 4 * * 1" # weekly, Monday 04:41 UTC, before the daily update check
+  workflow_dispatch:
+
+concurrency:
+  group: builder-image
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write # push to and prune ghcr.io/<owner>/<repo>-builder
+
+jobs:
+  image:
+    name: Build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # Keep this many dated versions for rollback; older ones are deleted.
+      KEEP_VERSIONS: 4
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      # Named after the repository, so a rename moves the image with it (the
+      # workflows reference ghcr.io/${{ github.repository }}-builder).
+      - name: Build and push image
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-builder"
+          # The source label links the package to this repository, which gives
+          # its workflows access to pull it.
+          docker build --pull -f container/Containerfile \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            -t "${image}:latest" -t "${image}:$(date -u +%Y%m%d)" container
+          docker push --all-tags "$image"
+
+      - name: Prune old image versions
+        run: |
+          package="${GITHUB_REPOSITORY#*/}-builder"
+          gh api --paginate "orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${package}/versions" \
+            --jq '.[] | "\(.created_at)\t\(.id)"' |
+            sort -r | tail -n +"$((KEEP_VERSIONS + 1))" | cut -f2 |
+            while read -r id; do
+              gh api -X DELETE "orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/${package}/versions/${id}"
+              echo "deleted version ${id}"
+            done

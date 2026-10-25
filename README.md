@@ -83,6 +83,12 @@ sudo pacman -Sy
   deletes the package's old versions (and any old file versions B2 kept);
   publish jobs queue up and run one at a time.
   To rebuild by hand, run the workflow with a package list or `all`.
+- **Builder image:** CI jobs run in `ghcr.io/<owner>/<repo>-builder`,
+  `archlinux:base-devel` with CI's tooling preinstalled
+  ([`container/Containerfile`](container/Containerfile)). *Build builder
+  image* rebuilds it weekly and whenever the Containerfile changes; jobs
+  still `pacman -Syu` on top. The name follows the repository, so after a
+  rename run that workflow once before anything else.
 - **Republishing the same version needs a `pkgrel` bump.** CI skips versions
   already in the database.
 - **Automatic updates** run daily (or by hand: *Check for package updates*).

@@ -20,6 +20,7 @@ on:
 permissions:
   contents: read
   actions: read # detect-changes.sh looks up the last successful run
+  packages: read # pull the builder image
 
 # One package per run. When a push (or a manual run) selects several, this
 # run only starts one run per package and builds nothing itself. Builds only
@@ -65,8 +66,12 @@ jobs:
     if: needs.detect.outputs.package != ''
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # archlinux:base-devel with the tooling preinstalled (container/Containerfile).
     container:
-      image: archlinux:base-devel
+      image: ghcr.io/${{ github.repository }}-builder:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
       options: --privileged
 
     env:
@@ -77,10 +82,10 @@ jobs:
       RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_APP_KEY }}
 
     steps:
-      - name: Install tooling
+      - name: Update system
         run: |
           pacman-key --init
-          pacman -Syu --noconfirm --needed git rclone
+          pacman -Syu --noconfirm
 
       - name: Check out repository
         uses: actions/checkout@v7
@@ -147,10 +152,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     container:
-      image: archlinux:base-devel
+      image: ghcr.io/${{ github.repository }}-builder:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     permissions:
       contents: read
       actions: write # delete this run's package artifact once published
+      packages: read # pull the builder image
 
     # One writer to the repository database at a time; shared with the
     # remove-package workflow. Queue, never cancel: with one run per package,
@@ -169,10 +178,10 @@ jobs:
       RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_APP_KEY }}
 
     steps:
-      - name: Install tooling
+      - name: Update system
         run: |
           pacman-key --init
-          pacman -Syu --noconfirm --needed git rclone jq github-cli
+          pacman -Syu --noconfirm
 
       - name: Check out repository
         uses: actions/checkout@v7
