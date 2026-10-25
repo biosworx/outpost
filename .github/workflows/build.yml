@@ -108,6 +108,8 @@ jobs:
         id: build
         env:
           PACKAGES: ${{ needs.detect.outputs.package }}
+          # Finds the update check's test build to reuse (actions: read).
+          GH_TOKEN: ${{ github.token }}
         run: scripts/ci/build-packages.sh
 
       # Artifacts reject ':' in file names, which packages with an epoch have

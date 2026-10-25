@@ -13,8 +13,11 @@
 # - Built package paths are appended to $OUT_DIR/.built for publish.sh.
 # - AUR-linked packages are resolved first (lib/aur.sh): the pinned AUR
 #   files or the override, copied to a work directory and built there.
+# - When the update check already test-built exactly these files, its
+#   packages are signed and used instead of building (lib/prebuilt.sh).
 #
-# Env: OUT_DIR (with the pulled database), GPGKEY (from setup-gpg.sh).
+# Env: OUT_DIR (with the pulled database), GPGKEY (from setup-gpg.sh),
+#      GH_TOKEN and GITHUB_REPOSITORY (to find a test build; optional).
 
 set -euo pipefail
 # shellcheck source=../lib/common.sh
@@ -23,6 +26,8 @@ source "$(dirname "$0")/../lib/common.sh"
 source "$(dirname "$0")/../lib/vercmp.sh"
 # shellcheck source=../lib/aur.sh
 source "$(dirname "$0")/../lib/aur.sh"
+# shellcheck source=../lib/prebuilt.sh
+source "$(dirname "$0")/../lib/prebuilt.sh"
 
 require_cmd makepkg bsdtar git
 
@@ -81,6 +86,7 @@ for name in "${pkgs[@]}"; do
   # --packagelist evaluates the PKGBUILD without building. VCS packages with
   # a pkgver() function only know their version after fetching sources, so
   # they always build.
+  expected=()
   if ! grep -qE '^[[:space:]]*pkgver[[:space:]]*\(\)' "${dir}/PKGBUILD"; then
     if ! packagelist="$(cd "$dir" && as_builder makepkg --packagelist)"; then
       warn "${name}: failed to evaluate PKGBUILD"
@@ -105,8 +111,9 @@ for name in "${pkgs[@]}"; do
   before="$(mktemp)"
   find "$PKGDEST" -maxdepth 1 -name '*.pkg.tar.zst' | sort >"$before"
 
-  if import_source_keys "$(pkg_dir "$name")" && import_source_keys "$dir" \
-       && (cd "$dir" && as_builder makepkg --syncdeps --noconfirm --cleanbuild --clean --sign); then
+  if prebuilt_use "$(prebuilt_key "$name" "$dir")" "$PKGDEST" "${expected[@]}" \
+     || { import_source_keys "$(pkg_dir "$name")" && import_source_keys "$dir" \
+            && (cd "$dir" && as_builder makepkg --syncdeps --noconfirm --cleanbuild --clean --sign); }; then
     mapfile -t new_files < <(
       find "$PKGDEST" -maxdepth 1 -name '*.pkg.tar.zst' | sort | comm -13 "$before" -
     )

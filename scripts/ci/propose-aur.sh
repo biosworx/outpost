@@ -14,7 +14,8 @@
 #        permanent                               kept; the PR asks you to
 #                                                carry AUR's changes over
 #   4. test build of what would now be built, unless it is still an override
-#      (AUR's change does not touch it then)
+#      (AUR's change does not touch it then); a passing one is offered for
+#      the merge to publish (lib/prebuilt.sh)
 #   5. commit, push, open a PR (draft if the test build failed) and close
 #      older open aur/<name>-* PRs
 #
@@ -32,6 +33,8 @@ source "$(dirname "$0")/../lib/vercmp.sh"
 source "$(dirname "$0")/../lib/aur.sh"
 # shellcheck source=../lib/propose.sh
 source "$(dirname "$0")/../lib/propose.sh"
+# shellcheck source=../lib/prebuilt.sh
+source "$(dirname "$0")/../lib/prebuilt.sh"
 
 [[ $# -eq 2 ]] || die "usage: $(basename "$0") <name> <commit>"
 name="$1" new="$2"
@@ -97,10 +100,11 @@ esac
 git add -- "$conf"
 
 # --- 3. Test build ------------------------------------------------------------------
-result="passed" tested=0
+result="passed" tested=0 key=""
 if [[ "$RESOLVED_FROM" == "aur" ]]; then
   group_start "Test-building ${name} ${RESOLVED_VERSION} from AUR"
   tested=1
+  key="$(prebuilt_key "$name" "${work}/build")"
   chown -R "${BUILD_USER:-builder}:" "$work"
   if import_source_keys "$pkg_dir" && import_source_keys "${work}/build" \
        && test_build "${work}/build" "${work}/build.log" "$work"; then
@@ -124,6 +128,10 @@ if [[ "$dry_run" == "1" ]]; then
 fi
 
 # --- 4. Commit, push and open the PR -------------------------------------------------
+if [[ "$tested" -eq 1 && "$result" == "passed" ]]; then
+  offer_prebuilt "$key" "$work" || warn "could not bundle the test build; the merge will build it"
+fi
+
 group_start "Opening pull request"
 body="${work}/body.md"
 diff_file="${work}/aur.diff"

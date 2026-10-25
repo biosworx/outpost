@@ -12,7 +12,9 @@
 #                     AUR at the pinned commit. The new override is newer than
 #                     AUR, so it takes precedence until AUR catches up.
 #   3. pkgver=<version>, pkgrel=1, updpkgsums
-#   4. test build: makepkg --syncdeps --cleanbuild (unsigned, output discarded)
+#   4. test build of the resolved package, as the build workflow would build
+#      it (unsigned); a passing one is offered for the merge to publish
+#      (lib/prebuilt.sh)
 #   5. commit, push, open a PR: ready if the build passed, draft with the
 #      build log tail if it failed
 #   6. close older open update/<name>-* PRs this one supersedes
@@ -33,6 +35,8 @@ source "$(dirname "$0")/../lib/vercmp.sh"
 source "$(dirname "$0")/../lib/aur.sh"
 # shellcheck source=../lib/propose.sh
 source "$(dirname "$0")/../lib/propose.sh"
+# shellcheck source=../lib/prebuilt.sh
+source "$(dirname "$0")/../lib/prebuilt.sh"
 
 [[ $# -eq 2 ]] || die "usage: $(basename "$0") <name> <version>"
 name="$1" version="$2"
@@ -81,7 +85,7 @@ group_start "Bumping ${name} ${current} -> ${version}"
 sed -i -e "s/^pkgver=.*/pkgver=${version}/" -e 's/^pkgrel=.*/pkgrel=1/' "$pkgbuild"
 chown -R "${BUILD_USER:-builder}:" "$dir"
 
-result="passed"
+result="passed" key=""
 if ! (cd "$dir" && SRCDEST="${work}/srcdest" as_builder updpkgsums) >"${work}/updpkgsums.log" 2>&1; then
   result="failed"
   cp "${work}/updpkgsums.log" "${work}/build.log"
@@ -94,8 +98,13 @@ group_end
 # --- 3. Test build ------------------------------------------------------------------
 if [[ "$result" == "passed" ]]; then
   group_start "Test-building ${name} ${version}"
-  if import_source_keys "$pkg_dir" && import_source_keys "$dir" \
-       && test_build "$dir" "${work}/build.log" "$work"; then
+  # Build what the merge will resolve to, so its hash matches.
+  rm -rf "${work}/build"
+  resolve_package "$name" "${work}/build" || die "could not resolve $(pkg_path "$name") after the bump"
+  key="$(prebuilt_key "$name" "${work}/build")"
+  chown -R "${BUILD_USER:-builder}:" "${work}/build"
+  if import_source_keys "$pkg_dir" && import_source_keys "${work}/build" \
+       && test_build "${work}/build" "${work}/build.log" "$work"; then
     ok "test build passed"
   else
     result="failed"
@@ -115,6 +124,10 @@ if [[ "$dry_run" == "1" ]]; then
 fi
 
 # --- 4. Commit, push and open the PR -------------------------------------------------
+if [[ "$result" == "passed" ]]; then
+  offer_prebuilt "$key" "$work" || warn "could not bundle the test build; the merge will build it"
+fi
+
 group_start "Opening pull request"
 body="${work}/body.md"
 # Backticks below are Markdown code spans, not command substitutions.

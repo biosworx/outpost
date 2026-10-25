@@ -93,7 +93,10 @@ sudo pacman -Sy
   already in the database.
 - **Automatic updates** run daily (or by hand: *Check for package updates*).
   Each proposal gets a test build and a PR: ready if the build passed, a
-  draft with the build log if it failed. Merge it to publish.
+  draft with the build log if it failed. Merge it to publish. A passing
+  test build is kept for 7 days: merging the PR unchanged within that time
+  signs and publishes those packages instead of building them again (only
+  artifacts from scheduled or manual update-check runs on `main` count).
   - *AUR moved past the pin:* an `aur/<name>-<commit>` PR moves the pin and
     shows AUR's diff. Review it: merging is what lets CI build and sign the
     new AUR code. It also deletes an override AUR has caught up with, and

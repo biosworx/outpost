@@ -75,6 +75,7 @@ jobs:
         run: scripts/ci/setup-builder.sh
 
       - name: Bump, test-build and open PR
+        id: propose
         env:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ matrix.package }}
@@ -87,3 +88,17 @@ jobs:
           else
             scripts/ci/propose-update.sh "$PACKAGE" "$VERSION"
           fi
+
+      # Merging the PR within the retention period publishes these packages
+      # instead of building them again (scripts/lib/prebuilt.sh).
+      - name: Upload test build for reuse
+        if: steps.propose.outputs.prebuilt != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.propose.outputs.prebuilt }}
+          path: .repo/prebuilt.tar
+          include-hidden-files: true
+          if-no-files-found: error
+          # Already zstd-compressed.
+          compression-level: 0
+          retention-days: 7

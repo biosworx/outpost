@@ -35,12 +35,32 @@ open_update_pr() {
   )
 }
 
-# Test-build a prepared directory as the build user, unsigned, discarding
-# the output. Logs to <log>. Returns makepkg's status.
+# Test-build a resolved directory as the build user, unsigned, with the
+# build workflow's makepkg settings, so the merge can publish the result
+# (lib/prebuilt.sh). Packages land in <scratch>/pkgdest; sources and build
+# trees in <scratch> too. Logs to <log>. Returns makepkg's status.
 test_build() {
   local dir="$1" log="$2" scratch="$3"
-  # The package is thrown away, so skip the (slow, maximum) compression.
-  # Sources and build trees go to scratch, never into the checkout.
-  (cd "$dir" && PKGDEST="$scratch" SRCDEST="${scratch}/srcdest" BUILDDIR="${scratch}/builddir" PKGEXT=.pkg.tar \
+  as_builder mkdir -p "${scratch}/pkgdest"
+  (cd "$dir" && PKGDEST="${scratch}/pkgdest" SRCDEST="${scratch}/srcdest" BUILDDIR="${scratch}/builddir" \
      as_builder makepkg --syncdeps --noconfirm --cleanbuild --clean) >"$log" 2>&1
+}
+
+# Bundle the packages of a passing test_build (<scratch>/pkgdest) as
+# $OUT_DIR/prebuilt.tar and set the step output "prebuilt" to <key>, the
+# artifact name check-updates.yml uploads it under. One tar, because
+# artifact file names reject the ':' of an epoch.
+offer_prebuilt() {
+  local key="$1" pkgdest="$2/pkgdest" files=()
+  shopt -s nullglob
+  files=("$pkgdest"/*.pkg.tar.zst)
+  shopt -u nullglob
+  if [[ "${#files[@]}" -eq 0 ]]; then
+    warn "the test build left no packages to reuse"
+    return 0
+  fi
+  mkdir -p "$OUT_DIR"
+  (cd "$pkgdest" && tar -cf "${OUT_DIR}/prebuilt.tar" -- "${files[@]##*/}")
+  set_output prebuilt "$key"
+  ok "offering the test build for reuse as ${key}"
 }
