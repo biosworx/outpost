@@ -69,6 +69,11 @@ build() {
     # from PATH.
     export CARGO_HOME="$srcdir/cargo-home"
     export PATH="$CARGO_HOME/bin:$PATH"
+    # cc-rs falls back to makepkg's x86-64 CFLAGS (-march, -fcf-protection)
+    # for the wasm32 C code (zstd-sys), which clang rejects for that target.
+    # -Oz is cc-rs's own choice for it; upstream sets these for libfluxwebp.
+    export CFLAGS_wasm32_unknown_unknown="-Oz"
+    export CXXFLAGS_wasm32_unknown_unknown="-Oz"
     pnpm build
     pnpm exec electron-builder --config electron-builder.config.cjs ${electron_builder_options[@]}
 }
