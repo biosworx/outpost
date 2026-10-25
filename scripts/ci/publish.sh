@@ -101,6 +101,10 @@ push() {
     pkgs+=("$file")
   done <"$built_list"
 
+  # Packages the database already lists, before this run adds its own.
+  local published="${WORK_TMP}/published"
+  db_filenames "$DB_ARCHIVE" | sort -u >"$published"
+
   # --- Update and sign the database ------------------------------------------------
   group_start "Updating ${DB_ARCHIVE}"
   as_builder repo-add --sign --key "$GPGKEY" --verify --remove --prevent-downgrade \
@@ -110,13 +114,28 @@ push() {
 
   # --- Stage 1: package binaries -----------------------------------------------------
   group_start "Uploading packages"
-  local pkg_list="${WORK_TMP}/packages.list"
+  local pkg_list="${WORK_TMP}/packages.list" new_list="${WORK_TMP}/new.list"
+  : >"$pkg_list"
+  : >"$new_list"
   for file in "${pkgs[@]}"; do
-    printf '%s\n%s.sig\n' "$file" "$file"
-  done >"$pkg_list"
+    if grep -qxF "$file" "$published"; then
+      printf '%s\n%s.sig\n' "$file" "$file" >>"$pkg_list"
+    else
+      printf '%s\n%s.sig\n' "$file" "$file" >>"$new_list"
+    fi
+  done
   # --immutable: never overwrite a published package with different bytes.
-  rclone copy "${RCLONE_FLAGS[@]}" --immutable --files-from-raw "$pkg_list" \
-    "$OUT_DIR" "$REMOTE"
+  # Files the database does not list yet were left by a publish that failed
+  # before the database upload (a cancelled run leaves its .sig behind), so
+  # this build's files replace them.
+  if [[ -s "$pkg_list" ]]; then
+    rclone copy "${RCLONE_FLAGS[@]}" --immutable --files-from-raw "$pkg_list" \
+      "$OUT_DIR" "$REMOTE"
+  fi
+  if [[ -s "$new_list" ]]; then
+    rclone copy "${RCLONE_FLAGS[@]}" --files-from-raw "$new_list" \
+      "$OUT_DIR" "$REMOTE"
+  fi
   ok "uploaded ${#pkgs[@]} package(s)"
   group_end
 
