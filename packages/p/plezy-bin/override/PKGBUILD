@@ -7,8 +7,8 @@
 
 pkgname=plezy-bin
 _pkgname=plezy
-pkgver=2.24.0
-pkgrel=2
+pkgver=2.25.0
+pkgrel=1
 pkgdesc="Modern client for Plex, Jellyfin and Emby (upstream binary)"
 arch=('x86_64')
 url="https://github.com/edde746/plezy"
@@ -27,7 +27,7 @@ options=('!strip' '!debug')
 # Release tags have no v prefix.
 source=("${pkgname}-${pkgver}.deb::${url}/releases/download/${pkgver}/plezy-linux-x64.deb")
 noextract=("${pkgname}-${pkgver}.deb")
-sha256sums=('a5f6088e58ec836c74810d23e1288f42d97c9a9a40c6410e99b015786aa0b16a')
+sha256sums=('45563717db283360c244605711fbbac2948cdbf74cc049e30c24b8cbdc8b93f5')
 
 package() {
   # The Flutter bundle in /opt/plezy plus the /usr/bin wrapper, desktop entry
