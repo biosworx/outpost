@@ -9,7 +9,7 @@
 
 pkgname=jellyfin-server-bin
 _pkgname=jellyfin
-pkgver=12.3
+pkgver=12.4
 pkgrel=1
 pkgdesc="Jellyfin server backend (upstream binary)"
 arch=('x86_64')
@@ -32,7 +32,7 @@ source=("${pkgname}-${pkgver}.deb::https://repo.jellyfin.org/files/server/debian
         'sysusers.conf'
         'tmpfiles.conf')
 noextract=("${pkgname}-${pkgver}.deb")
-sha256sums=('bfaaf487fceb91f912502473aa464564fa6d00f9ca6bc25c2bbc034193785fd8'
+sha256sums=('ac3836806cd4d37bb69de8f81e0261c03ba91a3cd5d8dcb0b3565a0fa4b8416e'
             '53c80d0467e4d0104120d617fda5f4a9308daaee1328cdd2b59c7bddf0b3b1e3'
             '67766e0cca84127ea8f648b1b2e781fdeaeda931ab452ce7045c5de620b88d8d')
 
