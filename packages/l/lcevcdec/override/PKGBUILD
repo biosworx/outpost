@@ -1,0 +1,48 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
+# Contributor: Daniel Bermond <dbermond@archlinux.org>
+#
+# Override of AUR `lcevcdec` (4.3.0-1 at a08888083a59),
+# bumped to upstream 4.3.1, which AUR lacks. Retired once AUR catches up.
+
+pkgname=lcevcdec
+pkgver=4.3.1
+pkgrel=1
+pkgdesc='Low Complexity Enhancement Video Codec Decoder (LCEVC_DEC)'
+arch=('x86_64')
+url='https://github.com/v-novaltd/LCEVCdec/'
+license=('BSD-3-Clause-Clear')
+depends=(
+    'glibc'
+    'libgcc'
+    'libstdc++')
+makedepends=(
+    'cmake'
+    'git'
+    'python'
+    'range-v3'
+    'rapidjson')
+options=('!emptydirs')
+source=("git+https://github.com/v-novaltd/LCEVCdec.git#tag=${pkgver}")
+sha256sums=('31690ba04b261159f4db020299856dd48f42def0acbe907a466d82c3f954a62c')
+
+export GIT_LFS_SKIP_SMUDGE='1'
+
+build() {
+    export CFLAGS+=' -DNDEBUG -ffat-lto-objects'
+    export CXXFLAGS+=' -DNDEBUG -ffat-lto-objects'
+    cmake -B build -S LCEVCdec \
+        -DCMAKE_BUILD_TYPE:STRING='None' \
+        -DCMAKE_INSTALL_PREFIX:PATH='/usr' \
+        -DVN_SDK_EXECUTABLES:BOOL='OFF' \
+        -DVN_SDK_SIMD:BOOL='OFF' \
+        -DVN_SDK_UNIT_TESTS:BOOL='OFF' \
+        -Wno-author
+    cmake --build build
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+    install -d -m755 "${pkgdir}/usr/share/licenses/${pkgname}"
+    mv "${pkgdir}/usr/share/doc/LCEVCdec_SDK/licenses"/{COPYING,LICENSE.md} "${pkgdir}/usr/share/licenses/${pkgname}"
+}
