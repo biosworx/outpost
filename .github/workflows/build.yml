@@ -103,9 +103,6 @@ jobs:
       - name: Prepare build user
         run: scripts/ci/setup-builder.sh
 
-      - name: Update system
-        run: pacman -Syu --noconfirm
-
       - name: Import signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}

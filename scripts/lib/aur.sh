@@ -80,7 +80,11 @@ aur_validate() {
 # and check out <commit>, or stay on the tip when <commit> is empty.
 aur_clone() {
   local base="$1" commit="$2" dest="$3"
-  git clone --quiet "${AUR_URL}/${base}.git" "$dest" || return 1
+  local -a depth=()
+  if [[ -z "$commit" ]]; then
+    depth=(--depth 1)
+  fi
+  git clone --quiet "${depth[@]}" "${AUR_URL}/${base}.git" "$dest" || return 1
   # An unknown package base clones as an empty repository.
   git -C "$dest" rev-parse -q --verify HEAD >/dev/null || { warn "${base}: no such AUR package"; return 1; }
   if [[ -n "$commit" ]]; then

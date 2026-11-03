@@ -274,13 +274,12 @@ prune() {
     log "removing $(wc -l <"$stale") stale file(s):"
     sed 's/^/    /' "$stale" >&2
     rclone delete "${RCLONE_FLAGS[@]}" --files-from-raw "$stale" "$REMOTE"
+    # Old versions: overwritten databases, and files an earlier run only hid.
+    rclone cleanup "${RCLONE_FLAGS[@]}" "$REMOTE"
+    ok "removed old file versions from ${REMOTE}"
   else
-    log "no stale package files"
+    log "no stale package files; skipping full bucket cleanup"
   fi
-
-  # Old versions: overwritten databases, and files an earlier run only hid.
-  rclone cleanup "${RCLONE_FLAGS[@]}" "$REMOTE"
-  ok "removed old file versions from ${REMOTE}"
   group_end
 }
 

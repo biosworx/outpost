@@ -88,8 +88,10 @@ as_builder gpg --batch --armor --export "$fingerprint" >"$pubkey"
 
 if [[ "${SKIP_PACMAN:-0}" != "1" ]]; then
   group_start "Trusting key in pacman keyring"
-  # Always init: the builder image's keyring has no local key to lsign with.
-  pacman-key --init
+  # Only initialize if keyring/trustdb doesn't already exist
+  if [[ ! -f /etc/pacman.d/gnupg/trustdb.gpg ]] || [[ -z "$(ls -A /etc/pacman.d/gnupg/private-keys-v1.d 2>/dev/null)" ]]; then
+    pacman-key --init
+  fi
   pacman-key --add "$pubkey"
   pacman-key --lsign-key "$fingerprint"
   group_end

@@ -10,6 +10,9 @@ FROM archlinux:base-devel
 # setup-builder.sh and setup-gpg.sh run pacman-key --init to make their own
 # before signing keys locally.
 RUN pacman-key --init \
- && pacman -Syu --noconfirm --needed git rclone jq github-cli pacman-contrib \
+ && pacman -Syu --noconfirm --needed git rclone jq github-cli pacman-contrib namcap \
+ && useradd --create-home --shell /bin/bash builder \
+ && printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/90-builder \
+ && chmod 0440 /etc/sudoers.d/90-builder \
  && rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/* \
       /etc/pacman.d/gnupg/private-keys-v1.d /etc/pacman.d/gnupg/openpgp-revocs.d

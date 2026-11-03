@@ -125,46 +125,70 @@ check_one() {
     if ! (aur_validate "$name"); then
       return 0
     fi
-    local base pin tip_dir pin_dir tip tip_version
+    local base pin tip_dir pin_dir tip tip_version AUR_VERSION=""
     base="$(aur_pkgbase "$name")"
     pin="$(aur_commit "$name")"
     tip_dir="${work}/${name}-tip"
     pin_dir="${work}/${name}-pin"
+
+    tip="$(git ls-remote -q "${AUR_URL}/${base}.git" HEAD 2>/dev/null | awk '{print $1; exit}' || true)"
+    if [[ -z "$tip" || ! "$tip" =~ ^[0-9a-f]{40}$ ]]; then
+      warn "${name}: could not fetch AUR ${base}; skipping"
+      return 0
+    fi
+
+    if [[ "$tip" == "$pin" ]] && ! has_override "$name" && [[ ! -f "$conf" ]]; then
+      log "${name}: AUR pin up to date (${pin:0:12})"
+      return 0
+    fi
+
     if ! aur_clone "$base" "" "$tip_dir"; then
       warn "${name}: could not fetch AUR ${base}; skipping"
       return 0
     fi
     tip="$(git -C "$tip_dir" rev-parse HEAD)"
     tip_version="$(srcinfo_version "$tip_dir")"
-    git clone -q "$tip_dir" "$pin_dir"
-    if ! git -C "$pin_dir" -c advice.detachedHead=false checkout -q "$pin" 2>/dev/null; then
-      warn "${name}: pinned commit ${pin} is gone from AUR (history rewritten?); proposing the tip"
-      add_update "$name" aur "?" "$tip_version" "$tip"
-      return 0
-    fi
-    resolve_package "$name" "${work}/${name}-resolved" "$pin_dir" >/dev/null 2>&1 \
-      || { warn "${name}: could not resolve; skipping"; return 0; }
-    covered="$(pkgver_of "$RESOLVED_VERSION")"
-    if [[ "$(pkg_vercmp "$(pkgver_of "$tip_version")" "$covered")" -gt 0 ]]; then
-      covered="$(pkgver_of "$tip_version")"
-    fi
 
-    if [[ "$tip" != "$pin" ]]; then
+    if [[ "$tip" == "$pin" ]]; then
+      pin_dir="$tip_dir"
+      resolve_package "$name" "${work}/${name}-resolved" "$pin_dir" >/dev/null 2>&1 \
+        || { warn "${name}: could not resolve; skipping"; return 0; }
+      covered="$(pkgver_of "$RESOLVED_VERSION")"
+      if [[ "$(pkg_vercmp "$(pkgver_of "$tip_version")" "$covered")" -gt 0 ]]; then
+        covered="$(pkgver_of "$tip_version")"
+      fi
+
+      if [[ "$OVERRIDE_STATE" == "stale" ]]; then
+        if pr_exists "aur/${name}-${pin:0:12}"; then
+          log "${name}: stale override, PR already exists"
+        else
+          ok "${name}: override ${OVERRIDE_VERSION} is stale (AUR has ${AUR_VERSION})"
+          add_update "$name" aur "$OVERRIDE_VERSION" "$AUR_VERSION" "$pin"
+        fi
+      else
+        log "${name}: AUR pin up to date ($(describe_resolution "$name"))"
+      fi
+    else
       if pr_exists "aur/${name}-${tip:0:12}"; then
         log "${name}: AUR ${tip_version} (${tip:0:12}) available, PR already exists"
       else
+        AUR_VERSION="?"
+        if aur_clone "$base" "$pin" "$pin_dir" 2>/dev/null; then
+          AUR_VERSION="$(srcinfo_version "$pin_dir")"
+        else
+          warn "${name}: pinned commit ${pin} is gone from AUR (history rewritten?); proposing the tip"
+        fi
         ok "${name}: AUR ${AUR_VERSION} -> ${tip_version} (${tip:0:12})"
         add_update "$name" aur "$AUR_VERSION" "$tip_version" "$tip"
       fi
-    elif [[ "$OVERRIDE_STATE" == "stale" ]]; then
-      if pr_exists "aur/${name}-${pin:0:12}"; then
-        log "${name}: stale override, PR already exists"
-      else
-        ok "${name}: override ${OVERRIDE_VERSION} is stale (AUR has ${AUR_VERSION})"
-        add_update "$name" aur "$OVERRIDE_VERSION" "$AUR_VERSION" "$pin"
+      covered="$(pkgver_of "$tip_version")"
+      if has_override "$name"; then
+        local over_ver
+        over_ver="$(pkgbuild_version "$(pkg_dir "$name")/override")"
+        if [[ "$(pkg_vercmp "$(pkgver_of "$over_ver")" "$covered")" -gt 0 ]]; then
+          covered="$(pkgver_of "$over_ver")"
+        fi
       fi
-    else
-      log "${name}: AUR pin up to date ($(describe_resolution "$name"))"
     fi
   fi
 

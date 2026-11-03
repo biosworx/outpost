@@ -11,7 +11,7 @@
 # Usage: lint-packages.sh [name...]
 #
 # Packages are checked in parallel, LINT_JOBS at a time (default: nproc).
-# Runs makepkg as the build user when root (useradd builder first).
+# Runs makepkg as the build user when root (default: builder).
 
 set -euo pipefail
 # shellcheck source=../lib/common.sh
@@ -21,12 +21,32 @@ source "$(dirname "$0")/../lib/vercmp.sh"
 # shellcheck source=../lib/aur.sh
 source "$(dirname "$0")/../lib/aur.sh"
 
-require_cmd git makepkg namcap
-
+names=()
 if [[ $# -gt 0 ]]; then
-  names=("$@")
+  declare -A seen=()
+  for arg in "$@"; do
+    arg="${arg//[[:space:]]/}"
+    if [[ -n "$arg" && -z "${seen["$arg"]:-}" ]]; then
+      seen["$arg"]=1
+      names+=("$arg")
+    fi
+  done
+  if [[ ${#names[@]} -eq 0 ]]; then
+    ok "no packages to lint"
+    exit 0
+  fi
 else
   mapfile -t names < <(all_packages)
+  if [[ ${#names[@]} -eq 0 ]]; then
+    ok "no packages to lint"
+    exit 0
+  fi
+fi
+
+require_cmd git makepkg namcap
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  id -u "${BUILD_USER:-builder}" >/dev/null 2>&1 || die "build user '${BUILD_USER:-builder}' does not exist"
 fi
 
 work="$(mktemp -d)"

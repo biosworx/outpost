@@ -111,9 +111,24 @@ for name in "${pkgs[@]}"; do
   before="$(mktemp)"
   find "$PKGDEST" -maxdepth 1 -name '*.pkg.tar.zst' | sort >"$before"
 
-  if prebuilt_use "$(prebuilt_key "$name" "$dir")" "$PKGDEST" "${expected[@]}" \
-     || { import_source_keys "$(pkg_dir "$name")" && import_source_keys "$dir" \
-            && (cd "$dir" && as_builder makepkg --syncdeps --noconfirm --cleanbuild --clean --sign); }; then
+  build_ok=0
+  if prebuilt_use "$(prebuilt_key "$name" "$dir")" "$PKGDEST" "${expected[@]}"; then
+    log "${name}: reused prebuilt test artifact; skipped full rebuild"
+    build_ok=1
+  else
+    # Only update system when actually compiling
+    if [[ "$(id -u)" -eq 0 ]]; then
+      pacman -Syu --noconfirm
+    else
+      sudo pacman -Syu --noconfirm
+    fi
+    if import_source_keys "$(pkg_dir "$name")" && import_source_keys "$dir" \
+       && (cd "$dir" && as_builder makepkg --syncdeps --noconfirm --cleanbuild --clean --sign); then
+      build_ok=1
+    fi
+  fi
+
+  if [[ "$build_ok" -eq 1 ]]; then
     mapfile -t new_files < <(
       find "$PKGDEST" -maxdepth 1 -name '*.pkg.tar.zst' | sort | comm -13 "$before" -
     )

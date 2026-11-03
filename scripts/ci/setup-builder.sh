@@ -70,8 +70,10 @@ elif [[ "$status" == "200" ]]; then
   if [[ ! -f "$pubkey" ]] || grep -q PLACEHOLDER "$pubkey"; then
     die "keys/${REPO_NAME}.asc is missing; cannot trust [${REPO_NAME}]"
   fi
-  # Always init: the base image has a trustdb but no local key to lsign with.
-  pacman-key --init
+  # Only initialize if keyring/trustdb doesn't already exist
+  if [[ ! -f /etc/pacman.d/gnupg/trustdb.gpg ]] || [[ -z "$(ls -A /etc/pacman.d/gnupg/private-keys-v1.d 2>/dev/null)" ]]; then
+    pacman-key --init
+  fi
   pacman-key --add "$pubkey"
   while IFS= read -r fpr; do
     pacman-key --lsign-key "$fpr"
