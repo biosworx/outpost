@@ -24,7 +24,8 @@
 # out, so a rejected update is not proposed again.
 #
 # Usage: check-updates.sh [name...]     (default: every package)
-# Env:   GH_TOKEN, GITHUB_REPOSITORY (for the existing-PR check; skipped if unset)
+# Env:   GH_TOKEN, GITHUB_REPOSITORY (for the existing-PR check; skipped if unset),
+#        CHECK_JOBS (default: nproc, min 4)
 
 set -euo pipefail
 # shellcheck source=../lib/common.sh
@@ -64,16 +65,23 @@ pkgver_of() {
   printf '%s' "${v%-*}"
 }
 
+# Prefetch existing PR branches in one call instead of per package.
+declare -A existing_prs=()
+if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
+  while IFS= read -r branch; do
+    [[ -n "$branch" ]] && existing_prs["$branch"]=1
+  done < <(gh pr list --repo "$GITHUB_REPOSITORY" --state all --limit 1000 --json headRefName --jq '.[].headRefName' 2>/dev/null || true)
+fi
+
 pr_exists() {
   local branch="$1"
-  [[ -n "${GITHUB_REPOSITORY:-}" ]] || return 1
-  [[ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state all --json number --jq '.[].number')" ]]
+  [[ -n "${existing_prs["$branch"]:-}" ]]
 }
 
-updates="[]"
 add_update() {
-  updates="$(jq -c --arg p "$1" --arg k "$2" --arg c "$3" --arg v "$4" --arg s "${5:-}" \
-    '. + [{package: $p, kind: $k, current: $c, version: $v, commit: $s}]' <<<"$updates")"
+  local p="$1" k="$2" c="$3" v="$4" s="${5:-}"
+  jq -n -c --arg p "$p" --arg k "$k" --arg c "$c" --arg v "$v" --arg s "$s" \
+    '{package: $p, kind: $k, current: $c, version: $v, commit: $s}' >>"${work}/${p}.update"
 }
 
 # Highest plain version among upstream's tags, or nothing.
@@ -104,34 +112,27 @@ upstream_latest() {
   printf '%s' "$latest"
 }
 
-if [[ $# -gt 0 ]]; then
-  names=("$@")
-else
-  mapfile -t names < <(all_packages)
-fi
-
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
-
-for name in "${names[@]}"; do
+check_one() {
+  local name="$1" conf covered=""
   if ! is_package "$name"; then
     warn "${name}: not a package; skipping"
-    continue
+    return 0
   fi
   conf="$(pkg_dir "$name")/update.conf"
-  # Newest pkgver already covered: by what is built now, and by AUR's tip.
-  covered=""
 
   # --- AUR ---------------------------------------------------------------------
   if is_aur_linked "$name"; then
     if ! (aur_validate "$name"); then
-      continue
+      return 0
     fi
-    base="$(aur_pkgbase "$name")" pin="$(aur_commit "$name")"
-    tip_dir="${work}/${name}-tip" pin_dir="${work}/${name}-pin"
+    local base pin tip_dir pin_dir tip tip_version
+    base="$(aur_pkgbase "$name")"
+    pin="$(aur_commit "$name")"
+    tip_dir="${work}/${name}-tip"
+    pin_dir="${work}/${name}-pin"
     if ! aur_clone "$base" "" "$tip_dir"; then
       warn "${name}: could not fetch AUR ${base}; skipping"
-      continue
+      return 0
     fi
     tip="$(git -C "$tip_dir" rev-parse HEAD)"
     tip_version="$(srcinfo_version "$tip_dir")"
@@ -139,10 +140,10 @@ for name in "${names[@]}"; do
     if ! git -C "$pin_dir" -c advice.detachedHead=false checkout -q "$pin" 2>/dev/null; then
       warn "${name}: pinned commit ${pin} is gone from AUR (history rewritten?); proposing the tip"
       add_update "$name" aur "?" "$tip_version" "$tip"
-      continue
+      return 0
     fi
     resolve_package "$name" "${work}/${name}-resolved" "$pin_dir" >/dev/null 2>&1 \
-      || { warn "${name}: could not resolve; skipping"; continue; }
+      || { warn "${name}: could not resolve; skipping"; return 0; }
     covered="$(pkgver_of "$RESOLVED_VERSION")"
     if [[ "$(pkg_vercmp "$(pkgver_of "$tip_version")" "$covered")" -gt 0 ]]; then
       covered="$(pkgver_of "$tip_version")"
@@ -168,14 +169,15 @@ for name in "${names[@]}"; do
   fi
 
   # --- Upstream ----------------------------------------------------------------
-  [[ -f "$conf" ]] || continue
+  [[ -f "$conf" ]] || return 0
   if [[ -z "$covered" ]]; then
     covered="$(pkgver_of "$(pkgbuild_version "$(pkg_dir "$name")")")"
   fi
   if [[ -z "$covered" ]]; then
     warn "${name}: could not read the current pkgver; skipping upstream check"
-    continue
+    return 0
   fi
+  local latest
   latest="$(upstream_latest "$conf" "$name")"
   if [[ -z "$latest" ]]; then
     warn "${name}: no usable version among upstream tags; skipping"
@@ -187,6 +189,49 @@ for name in "${names[@]}"; do
     ok "${name}: upstream ${covered} -> ${latest}"
     add_update "$name" upstream "$covered" "$latest"
   fi
+}
+
+if [[ $# -gt 0 ]]; then
+  names=("$@")
+else
+  mapfile -t names < <(all_packages)
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# Packages are independent, so check up to CHECK_JOBS at once (default: nproc,
+# minimum 4 for network concurrency); output is buffered per package and
+# printed in order so logs don't interleave.
+if [[ -n "${CHECK_JOBS:-}" ]]; then
+  max_jobs="$CHECK_JOBS"
+else
+  max_jobs="$(nproc)"
+  (( max_jobs >= 4 )) || max_jobs=4
+fi
+
+for name in "${names[@]}"; do
+  while (( $(jobs -rp | wc -l) >= max_jobs )); do wait -n; done
+  check_one "$name" >"${work}/${name}.log" 2>&1 &
 done
+wait
+
+for name in "${names[@]}"; do
+  [[ -f "${work}/${name}.log" ]] && cat "${work}/${name}.log"
+done
+
+updates="[]"
+update_list=()
+for name in "${names[@]}"; do
+  if [[ -f "${work}/${name}.update" ]]; then
+    while IFS= read -r item; do
+      [[ -n "$item" ]] && update_list+=("$item")
+    done <"${work}/${name}.update"
+  fi
+done
+
+if [[ "${#update_list[@]}" -gt 0 ]]; then
+  updates="$(printf '%s\n' "${update_list[@]}" | jq -s -c '.')"
+fi
 
 set_output updates "$updates"
