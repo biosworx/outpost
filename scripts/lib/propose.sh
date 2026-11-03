@@ -11,13 +11,26 @@
 # Expects the change to be staged already.
 open_update_pr() {
   local branch="$1" prefix="$2" result="$3" title="$4" body="$5" subject="$6" message="$7"
-  local pr_url old pr_args
+  local pr_url old pr_args commit_sha state desc status_args
 
   git config user.name "github-actions[bot]"
   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-  git commit -q -m "$subject" -m "$message"
+  git commit -q -m "${subject} [skip ci]" -m "$message"
   gh auth setup-git
   git push -q --force origin "$branch"
+
+  commit_sha="$(git rev-parse HEAD)"
+  state="success"
+  desc="Test build passed in archlinux:base-devel"
+  if [[ "$result" != "passed" ]]; then
+    state="failure"
+    desc="Test build failed (draft PR opened)"
+  fi
+  status_args=(-f state="$state" -f context="Test build" -f description="$desc")
+  if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
+    status_args+=(-f target_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")
+  fi
+  gh api "repos/${GITHUB_REPOSITORY}/statuses/${commit_sha}" "${status_args[@]}" >/dev/null 2>&1 || true
 
   pr_args=(--repo "$GITHUB_REPOSITORY" --base main --head "$branch" --title "$title" --body-file "$body")
   [[ "$result" == "passed" ]] || pr_args+=(--draft)

@@ -18,6 +18,7 @@ permissions:
   contents: write # push update/* branches
   pull-requests: write # open and close update PRs
   packages: read # pull the builder image
+  statuses: write # post test build commit status
 
 jobs:
   check:
