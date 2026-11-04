@@ -1,0 +1,61 @@
+# Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
+# Contributor: Claude <noreply@anthropic.com>
+#
+# Repackages upstream's release .deb (Tauri desktop client plus a bundled
+# Node runtime for the local dashboard server). Not on the AUR.
+
+pkgname=tokentracker-bin
+_pkgname=tokentracker
+pkgver=1.5.6
+pkgrel=1
+pkgdesc="Local-first AI coding token usage and cost tracker with a dashboard and tray app (upstream binary)"
+arch=('x86_64')
+url="https://github.com/xiufengsun/TokenTracker"
+license=('MIT')
+# The binary links these; Node is bundled in the package.
+depends=('cairo' 'dbus' 'gdk-pixbuf2' 'glib2' 'gtk3' 'libayatana-appindicator'
+         'libsoup3' 'webkit2gtk-4.1')
+optdepends=('xdg-utils: open links in the default browser')
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}")
+# Prebuilt binaries and a stock Node: nothing to strip or split.
+options=('!strip' '!debug')
+source=("${pkgname}-${pkgver}.deb::${url}/releases/download/v${pkgver}/TokenTracker-linux-x86_64.deb"
+        "${pkgname}-${pkgver}-LICENSE::https://raw.githubusercontent.com/xiufengsun/TokenTracker/v${pkgver}/LICENSE")
+noextract=("${pkgname}-${pkgver}.deb")
+sha256sums=('4dca4ca6063f4c38f087f31a43750a0599b3ced5ef389f50d3caa14944d2a4bc'
+            '68ac17897749fe5e75b07e386f3842c0da65599dd0a8f562a7cc7b49df098065')
+
+prepare() {
+  mkdir -p deb
+  bsdtar -xf "${pkgname}-${pkgver}.deb" -C deb
+  bsdtar -xf deb/data.tar.gz -C deb
+}
+
+package() {
+  cd deb
+
+  install -Dm755 usr/bin/tokentracker-linux -t "${pkgdir}/usr/bin"
+
+  # Keep upstream's layout: the binary finds its runtime at
+  # ../lib/TokenTracker/EmbeddedServer relative to itself.
+  install -dm755 "${pkgdir}/usr/lib"
+  cp -a --no-preserve=ownership usr/lib/TokenTracker "${pkgdir}/usr/lib/"
+  chmod -R u=rwX,go=rX "${pkgdir}/usr/lib/TokenTracker"
+  chmod 755 "${pkgdir}/usr/lib/TokenTracker/EmbeddedServer/node"
+
+  # Upstream's entry has an empty Categories= line.
+  install -Dm644 usr/share/applications/TokenTracker.desktop \
+    "${pkgdir}/usr/share/applications/${_pkgname}.desktop"
+  sed -i 's|^Categories=.*|Categories=Development;Utility;|' \
+    "${pkgdir}/usr/share/applications/${_pkgname}.desktop"
+
+  install -Dm644 usr/share/icons/hicolor/512x512/apps/tokentracker-linux.png \
+    -t "${pkgdir}/usr/share/icons/hicolor/512x512/apps"
+
+  cp -r --no-preserve=ownership usr/share/gnome-shell "${pkgdir}/usr/share/"
+  chmod -R u=rwX,go=rX "${pkgdir}/usr/share/gnome-shell"
+
+  install -Dm644 "${srcdir}/${pkgname}-${pkgver}-LICENSE" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
