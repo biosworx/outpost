@@ -109,6 +109,15 @@ sudo pacman -Sy
     [`packages/l/legcord/update.conf`](packages/l/legcord/update.conf)): an
     `update/<name>-<version>` PR bumps the override, creating one from AUR's
     files when there is none.
+- **Git packages** (`*-git`) are checked every 6 hours (*Check git packages
+  for new commits*, or by hand). Their version comes from `pkgver()` at build
+  time, so new upstream commits change nothing here and there is no PR: the
+  check compares each package's upstream tip with its published version and
+  starts the normal build run for the ones that are behind, which builds and
+  signs the pinned, reviewed PKGBUILD. Changes to the PKGBUILD itself (AUR
+  moving past the pin) still arrive as `aur/` PRs from the daily check. A
+  package whose build keeps failing is started again every 6 hours; its
+  pinned `#commit=`/`#tag=` sources are skipped.
 - **Signed sources:** for a PKGBUILD with `validpgpkeys`, commit each key as
   `packages/<l>/<name>/keys/pgp/<fingerprint>.asc` (keys AUR ships in its own
   `keys/pgp/` work too); CI imports them before building.

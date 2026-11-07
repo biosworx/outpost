@@ -1,0 +1,70 @@
+name: Check git packages for new commits
+
+on:
+  schedule:
+    - cron: "41 */6 * * *" # every 6 hours
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: "Space-separated git package names to check (blank = all *-git)"
+        required: false
+        default: ""
+
+concurrency:
+  group: check-git
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write # start build runs
+  packages: read # pull the builder image
+
+# A git package's version comes from its pkgver() at build time, so new
+# upstream commits change nothing in this repository: there is no PR to open
+# or approve. This starts the normal build run for each package whose
+# upstream has commits that are not published yet. The PKGBUILDs they build
+# are the pinned, reviewed ones; AUR changes to them still arrive as PRs
+# from the daily check.
+jobs:
+  check:
+    name: Check git packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # archlinux:base-devel with the tooling preinstalled (container/Containerfile).
+    container:
+      image: ghcr.io/${{ github.repository }}-builder:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Fetch the published database
+        env:
+          OUT_DIR: ${{ github.workspace }}/.repo
+          # Read [aurstrich] straight from B2 (Bot Fight Mode blocks runners).
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+        run: scripts/ci/fetch-db.sh
+
+      - name: Find git packages with new commits
+        id: check
+        env:
+          OUT_DIR: ${{ github.workspace }}/.repo
+          GH_TOKEN: ${{ github.token }}
+          PACKAGES: ${{ github.event.inputs.packages }}
+        run: |
+          # shellcheck disable=SC2086 # word-split the package list on purpose
+          scripts/ci/check-git.sh $PACKAGES
+
+      - name: Start a build run for each
+        if: steps.check.outputs.packages != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGES: ${{ steps.check.outputs.packages }}
+          WORKFLOW_FILE: build.yml
+          BRANCH: main
+        run: scripts/ci/dispatch-builds.sh
