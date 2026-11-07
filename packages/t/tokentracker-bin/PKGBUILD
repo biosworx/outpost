@@ -6,7 +6,7 @@
 
 pkgname=tokentracker-bin
 _pkgname=tokentracker
-pkgver=1.5.13
+pkgver=1.5.14
 pkgrel=1
 pkgdesc="Local-first AI coding token usage and cost tracker with a dashboard and tray app (upstream binary)"
 arch=('x86_64')
@@ -23,7 +23,7 @@ options=('!strip' '!debug')
 source=("${pkgname}-${pkgver}.deb::${url}/releases/download/v${pkgver}/TokenTracker-linux-x86_64.deb"
         "${pkgname}-${pkgver}-LICENSE::https://raw.githubusercontent.com/xiufengsun/TokenTracker/v${pkgver}/LICENSE")
 noextract=("${pkgname}-${pkgver}.deb")
-sha256sums=('b5a566cee133d6046058afe8dfc4271b4d350eb9a0e9efc4ab19b93da6c215c1'
+sha256sums=('621140e65ce706619ae4fc0f1a8571737930ab19604ae0023e9b2367bca8fb66'
             '68ac17897749fe5e75b07e386f3842c0da65599dd0a8f562a7cc7b49df098065')
 
 prepare() {
