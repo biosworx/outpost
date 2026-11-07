@@ -115,9 +115,17 @@ sudo pacman -Sy
   check compares each package's upstream tip with its published version and
   starts the normal build run for the ones that are behind, which builds and
   signs the pinned, reviewed PKGBUILD. Changes to the PKGBUILD itself (AUR
-  moving past the pin) still arrive as `aur/` PRs from the daily check. A
-  package whose build keeps failing is started again every 6 hours; its
-  pinned `#commit=`/`#tag=` sources are skipped.
+  moving past the pin) still arrive as `aur/` PRs from the daily check.
+  Packages with a `#commit=`/`#tag=` source are skipped.
+- **Failures open an issue.** A failed build opens (or comments on) one
+  issue per package, `Build failing: <name>`, label `ci-failure`, so anyone
+  watching the repository is notified; the next successful build closes it.
+  The two check workflows do the same as `Workflow failing: <name>` if the
+  check itself breaks. For a git package the issue records the upstream
+  commit it failed at: the 6-hourly check does not start that build again
+  until upstream has new commits, so a broken package is not retried every 6
+  hours. Close the issue to make it try again. Failed test builds for update
+  PRs still show as draft PRs.
 - **Signed sources:** for a PKGBUILD with `validpgpkeys`, commit each key as
   `packages/<l>/<name>/keys/pgp/<fingerprint>.asc` (keys AUR ships in its own
   `keys/pgp/` work too); CI imports them before building.

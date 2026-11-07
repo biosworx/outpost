@@ -265,3 +265,35 @@ jobs:
           if id builder >/dev/null 2>&1; then
             sudo -u builder -H GNUPGHOME=/home/builder/.gnupg gpgconf --kill gpg-agent || true
           fi
+
+  # Tell someone when a build fails, and clear it once it works again: one
+  # issue per package (scripts/ci/report-failure.sh). A cancelled run says
+  # nothing either way.
+  report:
+    name: Report result
+    needs: [detect, build, publish]
+    if: >-
+      always() && !cancelled()
+      && (needs.detect.outputs.package != '' || github.event.inputs.packages != '')
+      && (contains(needs.*.result, 'failure') || needs.build.result == 'success')
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ needs.detect.outputs.package || github.event.inputs.packages }}
+          FAILED: ${{ contains(needs.*.result, 'failure') }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$FAILED" == "true" ]]; then
+            scripts/ci/report-failure.sh build-fail "$PACKAGE" "$RUN_URL"
+          else
+            scripts/ci/report-failure.sh build-ok "$PACKAGE" "$RUN_URL"
+          fi

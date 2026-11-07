@@ -18,6 +18,9 @@
 # A package that was never published, or whose published version carries no
 # commit hash (so the check cannot tell), is selected every time.
 #
+# Also skipped: a package whose open failure issue (report-failure.sh) says it
+# failed at the commit upstream is still at; new commits try it again.
+#
 # Env: OUT_DIR (with the pulled database, see fetch-db.sh), GH_TOKEN and
 #      GITHUB_REPOSITORY (to see running builds; optional)
 # Writes the step output "packages", space-separated (empty: nothing to do).
@@ -29,62 +32,10 @@ source "$(dirname "$0")/../lib/common.sh"
 source "$(dirname "$0")/../lib/vercmp.sh"
 # shellcheck source=../lib/aur.sh
 source "$(dirname "$0")/../lib/aur.sh"
+# shellcheck source=../lib/gitsrc.sh
+source "$(dirname "$0")/../lib/gitsrc.sh"
 
 require_cmd git jq bsdtar
-export GIT_TERMINAL_PROMPT=0
-
-# Print the source=() entries of a resolved package, one per line. AUR's
-# files are never sourced here; our own PKGBUILDs are, as makepkg would.
-source_entries() {
-  local dir="$1"
-  if [[ "$RESOLVED_FROM" == "aur" ]]; then
-    awk -F' = ' -v arch="source_${REPO_ARCH}" '
-      { k = $1; sub(/^[[:space:]]+/, "", k) }
-      k == "source" || k == arch { print substr($0, index($0, " = ") + 3) }
-    ' "${dir}/.SRCINFO"
-    return 0
-  fi
-  (
-    cd "$dir" || exit 1
-    set +eu
-    source=()
-    # shellcheck disable=SC1091
-    source ./PKGBUILD >/dev/null 2>&1
-    local arch_var="source_${REPO_ARCH}[@]" s
-    for s in "${source[@]}" "${!arch_var}"; do printf '%s\n' "$s"; done
-  )
-}
-
-# Print "<url><TAB><ref>" for the first git source that follows a branch, or
-# "pinned" when it is fixed to a commit or tag, or nothing without one.
-first_git_source() {
-  local entry url frag key value ref
-  while IFS= read -r entry; do
-    [[ "$entry" == *git+* ]] || continue
-    entry="${entry#*::}"
-    entry="${entry#git+}"
-    entry="${entry%%\?*}"
-    url="${entry%%#*}"
-    frag=""
-    [[ "$entry" == *#* ]] && frag="${entry#*#}"
-    # The URL goes to git ls-remote: plain network URLs only.
-    [[ "$url" =~ ^(https?|git)://[A-Za-z0-9][A-Za-z0-9._~:/@%+-]*$ ]] || continue
-    ref="HEAD"
-    if [[ -n "$frag" ]]; then
-      key="${frag%%=*}"
-      value="${frag#*=}"
-      case "$key" in
-        commit|tag) printf 'pinned'; return 0 ;;
-        branch)
-          [[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._/+-]*$ ]] || continue
-          ref="refs/heads/${value}"
-          ;;
-      esac
-    fi
-    printf '%s\t%s' "$url" "$ref"
-    return 0
-  done
-}
 
 # Published "name<TAB>version" lines from the pulled database.
 declare -A published=()
@@ -111,30 +62,40 @@ if [[ -n "${GITHUB_REPOSITORY:-}" ]] && command -v gh >/dev/null 2>&1; then
   done
 fi
 
+# Upstream tips that open failure issues recorded (report-failure.sh), by
+# package: a build that failed at the tip upstream is still at is not started
+# again until upstream moves.
+tip_marker="<!-- tip: ([0-9a-f]{40}) -->"
+declare -A failed_tip=() failed_issue=()
+if [[ -n "${GITHUB_REPOSITORY:-}" ]] && command -v gh >/dev/null 2>&1; then
+  while IFS=$'\t' read -r number title body; do
+    [[ "$title" == "Build failing: "* ]] || continue
+    pkg="${title#Build failing: }"
+    failed_issue["$pkg"]="$number"
+    if [[ "$body" =~ $tip_marker ]]; then
+      failed_tip["$pkg"]="${BASH_REMATCH[1]}"
+    fi
+  done < <(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-failure --state open --limit 200 \
+             --json number,title,body 2>/dev/null \
+             | jq -r '.[] | [.number, .title, .body] | @tsv' || true)
+fi
+
 check_one() {
-  local name="$1" work="$2" source_line url ref tip short
+  local name="$1" work="$2" tip short
   if [[ -n "${running["$name"]:-}" ]]; then
     log "${name}: a build run is already queued or running"
     return 1
   fi
-  if ! resolve_package "$name" "${work}/${name}" >/dev/null 2>&1; then
-    warn "${name}: could not resolve; skipping"
+  if ! tip="$(upstream_tip "$name" "$work")"; then
+    warn "${name}: skipping"
     return 1
   fi
-  source_line="$(source_entries "${work}/${name}" | first_git_source)"
-  if [[ -z "$source_line" ]]; then
-    warn "${name}: no git source found; skipping"
-    return 1
-  fi
-  if [[ "$source_line" == pinned ]]; then
+  if [[ "$tip" == pinned ]]; then
     log "${name}: git source is pinned to a commit or tag; nothing to follow"
     return 1
   fi
-  IFS=$'\t' read -r url ref <<<"$source_line"
-
-  tip="$(git ls-remote -q "$url" "$ref" 2>/dev/null | awk '{print $1; exit}' || true)"
-  if [[ ! "$tip" =~ ^[0-9a-f]{40}$ ]]; then
-    warn "${name}: could not read ${ref} of ${url}; skipping"
+  if [[ -n "${failed_issue["$name"]:-}" && "${failed_tip["$name"]:-}" == "$tip" ]]; then
+    warn "${name}: failed at this upstream commit (${tip:0:7}); see issue #${failed_issue["$name"]}"
     return 1
   fi
   short="${tip:0:7}"

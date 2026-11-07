@@ -17,6 +17,7 @@ concurrency:
 permissions:
   contents: read
   actions: write # start build runs
+  issues: read # skip packages that already failed at upstream's current commit
   packages: read # pull the builder image
 
 # A git package's version comes from its pkgver() at build time, so new
@@ -55,6 +56,7 @@ jobs:
         env:
           OUT_DIR: ${{ github.workspace }}/.repo
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           PACKAGES: ${{ github.event.inputs.packages }}
         run: |
           # shellcheck disable=SC2086 # word-split the package list on purpose
@@ -68,3 +70,30 @@ jobs:
           WORKFLOW_FILE: build.yml
           BRANCH: main
         run: scripts/ci/dispatch-builds.sh
+
+  # Tell someone when the check itself breaks (the builds it starts report
+  # their own failures, see build.yml).
+  report:
+    name: Report result
+    needs: check
+    if: always() && !cancelled()
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.check.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$RESULT" == "success" ]]; then
+            scripts/ci/report-failure.sh job-ok "Check git packages" "$RUN_URL"
+          else
+            scripts/ci/report-failure.sh job-fail "Check git packages" "$RUN_URL"
+          fi

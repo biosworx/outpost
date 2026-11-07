@@ -104,3 +104,30 @@ jobs:
           # Already zstd-compressed.
           compression-level: 0
           retention-days: 7
+
+  # Tell someone when the check itself breaks. A failed test build opens a
+  # draft PR already, so the update jobs are not watched.
+  report:
+    name: Report result
+    needs: check
+    if: always() && !cancelled()
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.check.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$RESULT" == "success" ]]; then
+            scripts/ci/report-failure.sh job-ok "Check for package updates" "$RUN_URL"
+          else
+            scripts/ci/report-failure.sh job-fail "Check for package updates" "$RUN_URL"
+          fi
