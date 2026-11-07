@@ -131,6 +131,15 @@ sudo pacman -Sy
   until upstream has new commits, so a broken package is not retried every 6
   hours. Close the issue to make it try again. Failed test builds for update
   PRs still show as draft PRs.
+- **Routine `-bin` updates merge themselves.** A `-bin` package's update PR
+  is merged by the workflow, which then starts its build (reusing the test
+  build), when the test build passed and the change can only be a version
+  bump: an `update/` PR (the script wrote just `pkgver`, `pkgrel` and the
+  checksums), or an `aur/` PR where AUR changed nothing but `pkgver`,
+  `pkgrel` and checksum values in `PKGBUILD` (`routine_pkgbuild_diff` in
+  [`scripts/lib/propose.sh`](scripts/lib/propose.sh)). Any other AUR change
+  (a source, a function, a comment, a dependency), an override, rewritten AUR
+  history or a failed test build leaves the PR open for review as before.
 - **Signed sources:** for a PKGBUILD with `validpgpkeys`, commit each key as
   `packages/<l>/<name>/keys/pgp/<fingerprint>.asc` (keys AUR ships in its own
   `keys/pgp/` work too); CI imports them before building.

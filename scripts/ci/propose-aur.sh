@@ -19,6 +19,10 @@
 #   5. commit, push, open a PR (draft if the test build failed) and close
 #      older open aur/<name>-* PRs
 #
+# Step output "automerge" is true for a -bin package whose AUR change is
+# routine (only pkgver, pkgrel and checksums; see routine_pkgbuild_diff) and
+# whose test build passed: the workflow then merges the PR (automerge.sh).
+#
 # <commit> may equal the current pin: that only deletes a stale override.
 #
 # Must run as root after setup-builder.sh. Env: GH_TOKEN, GITHUB_REPOSITORY,
@@ -127,7 +131,18 @@ if [[ "$dry_run" == "1" ]]; then
   exit
 fi
 
-# --- 4. Commit, push and open the PR -------------------------------------------------
+# --- 4. Routine -bin bumps merge themselves ------------------------------------------
+# Only when AUR changed nothing but pkgver, pkgrel and checksums between the
+# two pins (lib/propose.sh), the test build passed, and no override is
+# involved. Anything else waits for a human, as the PR body says.
+automerge=false
+if [[ "$name" == *-bin && "$tested" -eq 1 && "$result" == "passed" && "$old" != "$new" \
+      && "$old_found" -eq 1 && -z "$history_note" && "$OVERRIDE_STATE" == "none" ]] \
+   && routine_pkgbuild_diff "${work}/aur" "$old" "$new"; then
+  automerge=true
+fi
+
+# --- 5. Commit, push and open the PR -------------------------------------------------
 if [[ "$tested" -eq 1 && "$result" == "passed" ]]; then
   offer_prebuilt "$key" "$work" || warn "could not bundle the test build; the merge will build it"
 fi
@@ -165,6 +180,10 @@ diff_lines="$(wc -l <"$diff_file")"
     tail -n 60 "${work}/build.log"
     printf '\n```\n</details>\n\n'
   fi
+  if [[ "$automerge" == true ]]; then
+    printf '**Routine update:** AUR changed only `pkgver`, `pkgrel` and checksums, so\n'
+    printf 'the workflow merges this itself once the test build is uploaded.\n\n'
+  fi
   if [[ "$diff_lines" -gt 0 ]]; then
     printf '**Review AUR'"'"'s diff before merging** (`.SRCINFO` left out):\n\n'
     printf '<details><summary>%s lines</summary>\n\n```diff\n' "$diff_lines"
@@ -184,5 +203,6 @@ fi
 open_update_pr "$branch" "aur/${name}-" "$result" "$title" "$body" "$subject" \
   "AUR ${base} ${old:0:12} -> ${new:0:12}.${override_note:+ Override ${OVERRIDE_STATE}.} Test build ${result}."
 group_end
+set_output automerge "$automerge"
 
 [[ "$result" == "passed" ]] || die "${name}: test build failed (draft PR opened)"

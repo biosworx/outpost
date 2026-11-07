@@ -36,6 +36,7 @@ open_update_pr() {
   [[ "$result" == "passed" ]] || pr_args+=(--draft)
   pr_url="$(gh pr create "${pr_args[@]}")"
   ok "opened ${pr_url}"
+  set_output pr "$pr_url"
 
   while IFS= read -r old; do
     [[ -n "$old" ]] || continue
@@ -76,4 +77,35 @@ offer_prebuilt() {
   (cd "$pkgdest" && tar -cf "${OUT_DIR}/prebuilt.tar" -- "${files[@]##*/}")
   set_output prebuilt "$key"
   ok "offering the test build for reuse as ${key}"
+}
+
+# Whether an AUR change is routine: between <old> and <new> of the checkout
+# <dir>, the only file changed besides .SRCINFO is PKGBUILD, and the only
+# lines changed in it are pkgver=, pkgrel= and checksum values (quoted
+# lowercase hex or SKIP, in a sums array). Nothing else can change what is
+# downloaded or run: no source, function or dependency edit gets through.
+# Returns 0 for routine, 1 otherwise (printing why on stderr).
+routine_pkgbuild_diff() {
+  local dir="$1" old="$2" new="$3" files line body
+  local sums='[[:space:]]*(sha1|sha224|sha256|sha384|sha512|md5|b2|ck)sums(_[A-Za-z0-9_]+)?=\('
+  local hexes="([[:space:]]*['\"]([0-9a-f]+|SKIP)['\"])*[[:space:]]*\)?[[:space:]]*"
+  local re_ver='^(pkgver|pkgrel)=["'"'"']?[A-Za-z0-9._+~-]+["'"'"']?[[:space:]]*$'
+  local re_sums="^(${sums})?${hexes}\$"
+  files="$(git -C "$dir" diff --name-only "$old" "$new" | grep -v '^\.SRCINFO$' || true)"
+  if [[ "$files" != "PKGBUILD" ]]; then
+    warn "not routine: AUR changed ${files//$'\n'/, }"
+    return 1
+  fi
+  while IFS= read -r line; do
+    [[ "$line" == "+++"* || "$line" == "---"* ]] && continue
+    [[ "$line" == [+-]* ]] || continue
+    body="${line:1}"
+    [[ -n "${body//[[:space:]]/}" ]] || continue
+    if [[ "$body" =~ $re_ver || "$body" =~ $re_sums ]]; then
+      continue
+    fi
+    warn "not routine: AUR changed '${body}'"
+    return 1
+  done < <(git -C "$dir" diff -U0 "$old" "$new" -- PKGBUILD)
+  return 0
 }

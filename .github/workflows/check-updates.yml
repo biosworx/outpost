@@ -15,8 +15,9 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write # push update/* branches
-  pull-requests: write # open and close update PRs
+  actions: write # start the build for an update PR that merged itself
+  contents: write # push update/* branches, merge routine -bin PRs
+  pull-requests: write # open, close and merge update PRs
   packages: read # pull the builder image
   statuses: write # post test build commit status
 
@@ -104,6 +105,17 @@ jobs:
           # Already zstd-compressed.
           compression-level: 0
           retention-days: 7
+
+      # A -bin package whose only change is pkgver, pkgrel and checksums,
+      # with a passing test build, merges itself and starts its build, which
+      # reuses the test build uploaded above. Everything else waits for review.
+      - name: Merge routine -bin updates
+        if: steps.propose.outputs.automerge == 'true' && steps.propose.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ steps.propose.outputs.pr }}
+          PACKAGE: ${{ matrix.package }}
+        run: scripts/ci/automerge.sh "$PR" "$PACKAGE"
 
   # Tell someone when the check itself breaks. A failed test build opens a
   # draft PR already, so the update jobs are not watched.

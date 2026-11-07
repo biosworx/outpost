@@ -152,4 +152,13 @@ open_update_pr "$branch" "update/${name}-" "$result" \
   "${name}: update to ${version}" "Automated update from ${current}. Test build ${result}."
 group_end
 
+# A -bin package's update only moves pkgver, pkgrel and the checksums (this
+# script wrote exactly that on top of files already reviewed), so a passing
+# one is merged by the workflow (automerge.sh).
+if [[ "$name" == *-bin && "$result" == "passed" ]]; then
+  set_output automerge true
+else
+  set_output automerge false
+fi
+
 [[ "$result" == "passed" ]] || die "${name} ${version}: test build failed (draft PR opened)"
