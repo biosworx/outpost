@@ -20,6 +20,10 @@ on:
         description: "Run IDs to wait for before building (set by dispatch-builds.sh for packages whose dependencies build in the same push)"
         required: false
         default: ""
+      retry:
+        description: "Set to 1 by the automatic retry after an infrastructure failure (scripts/ci/retry-build.sh); a retry is never retried"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -268,7 +272,9 @@ jobs:
 
   # Tell someone when a build fails, and clear it once it works again: one
   # issue per package (scripts/ci/report-failure.sh). A cancelled run says
-  # nothing either way.
+  # nothing either way. A failure outside the package's own build (a lost
+  # runner, a failed download or publish) is started once more first, and
+  # only reported if the retry fails as well.
   report:
     name: Report result
     needs: [detect, build, publish]
@@ -280,12 +286,22 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: write # start the retry run
       issues: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Retry once after an infrastructure failure
+        id: retry
+        if: contains(needs.*.result, 'failure') && github.event.inputs.retry == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ needs.detect.outputs.package || github.event.inputs.packages }}
+        run: scripts/ci/retry-build.sh "$PACKAGE" "$GITHUB_RUN_ID"
+
       - name: Open, update or close the issue
+        if: steps.retry.outputs.retried != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ needs.detect.outputs.package || github.event.inputs.packages }}

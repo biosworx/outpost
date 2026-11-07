@@ -117,6 +117,11 @@ sudo pacman -Sy
   signs the pinned, reviewed PKGBUILD. Changes to the PKGBUILD itself (AUR
   moving past the pin) still arrive as `aur/` PRs from the daily check.
   Packages with a `#commit=`/`#tag=` source are skipped.
+- **Infrastructure failures retry once.** When a build run fails somewhere
+  other than the package's own build (a lost runner, a container that would
+  not start, a failed download or publish), the report job starts the build
+  again (`retry=1`, never retried a second time) and stays quiet. A package
+  that fails to build, or hits the job timeout, is reported at once.
 - **Failures open an issue.** A failed build opens (or comments on) one
   issue per package, `Build failing: <name>`, label `ci-failure`, so anyone
   watching the repository is notified; the next successful build closes it.
