@@ -1,10 +1,9 @@
 # Maintainer: BiosPlus <9003059+BiosPlus@users.noreply.github.com>
 # Contributor: Claude <noreply@anthropic.com>
-# Contributor: gfrank227 [at] gmail [dot] com
-# Contributor: HurricanePootis <hurricanepootis@protonmail.com>
 #
-# Builds Lichii (Eden fork) from upstream's default branch (nx2). Not on the
-# AUR; the build options follow AUR's eden-git.
+# Upstream: https://github.com/zortos293/Lichii (by zortos293), a fork of
+# Eden. Builds upstream's default branch (nx2). Not on the AUR; the PKGBUILD
+# is written here; its build options are adapted from the AUR eden-git package.
 
 _pkgname=lichii
 pkgname=lichii-git
