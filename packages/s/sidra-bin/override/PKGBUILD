@@ -6,7 +6,7 @@
 
 pkgname=sidra-bin
 _pkgname=sidra
-pkgver=1.3.0
+pkgver=1.3.1
 pkgrel=1
 pkgdesc="Elegant Apple Music desktop client for Linux (upstream binary)"
 arch=('x86_64')
@@ -27,7 +27,7 @@ options=('!strip' '!debug')
 # Release tags have no v prefix; the asset name has no version.
 source=("${pkgname}-${pkgver}.AppImage::${url}/releases/download/${pkgver}/Sidra-linux-x86_64.AppImage")
 noextract=("${pkgname}-${pkgver}.AppImage")
-sha256sums=('9bbacb50cf70bba508c9e8b90c1d88db66ce15fa2d333e252bc98d2895efaeb3')
+sha256sums=('8a76a7bf1cf0653df8ec6833efee1b81eae96527748315f734fc8b539611014c')
 
 prepare() {
   # Unpacks to squashfs-root/ without FUSE.
